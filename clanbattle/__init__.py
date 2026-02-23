@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 help_text = '''
 * “+” 表示空格
 【出刀监控/出刀监控2】机器人登录账号，监视出刀情况并记录
+【查档线/查公会/查排名】指令+关键词或者排名
 【催刀】栞栞谁没出满三刀
 【当前战报】本期会战出刀情况
 【我的战报 + 游戏名称】 栞栞个人出刀情况
@@ -996,3 +997,203 @@ async def rank_and_status():
         if not clan_info.loop_check:
             msg += "，但出刀监控未开启，排名可能不准确"
         await bot.send_group_msg(group_id = group_id, message = msg)
+        
+   
+@sv.scheduled_job('cron', minute='*/5')  # 每5分钟检查一次  
+async def check_silent_offline():  
+    bot = get_bot()  
+    current_time = time.time()  
+    offline_groups = []  
+      
+    for group_id in run_group:  
+        if group_id in clanbattle_info:  
+            clan_info = clanbattle_info[group_id]  
+            # 如果心跳时间超过5分钟未更新，认为静默掉线  
+            if clan_info.loop_check and (current_time - clan_info.loop_check > 300):  
+                offline_groups.append(group_id)  
+      
+    # 向掉线的群组发送提醒  
+    for group_id in offline_groups:  
+        try:  
+            await bot.send_group_msg(  
+                self_id=run_group[group_id],   
+                group_id=group_id,   
+                message="检测到出刀监控可能已掉线，请检查监控状态"  
+            )  
+            # 从运行群组中移除，避免重复提醒  
+            del run_group[group_id]  
+            await write_config(run_path, run_group)  
+        except Exception as e:  
+            pass   
+            
+           
+
+@sv.on_prefix('查档线', '查公会', '查排名')  
+async def query_line(bot, ev):  
+    if not priv.check_priv(ev, priv.ADMIN):   
+        return await bot.send(ev, '权限不足，当前指令仅管理员可用!')  
+      
+    group_id = ev.group_id  
+      
+    # 检查是否已开启出刀监控  
+    if group_id not in clanbattle_info:  
+        return await bot.send(ev, "请先开启出刀监控")  
+      
+    # 获取已登录的 client 和相关信息  
+    clan_info = clanbattle_info[group_id]  
+    client = clan_info.client  
+    clan_id = clan_info.clan_id  
+    clan_battle_id = clan_info.clan_battle_id  
+      
+    goal = ev.message.extract_plain_text().strip()  
+      
+    try:  
+        goal_list = []  
+          
+        # 处理数字排名查询  
+        if re.match("^[0-9,]+$", goal):  
+            if ',' in goal:   
+                goal_list = goal.split(',')  
+            else:   
+                goal_list.append(goal)  
+          
+        # 处理默认档线查询  
+        elif goal == '':  
+            goal_list = [1, 11, 41, 121, 201, 401, 801, 1801, 3001, 6001]  
+            await bot.send(ev, '获取数据时间较长，请稍候')  
+          
+        # 处理公会名搜索  
+        else:  
+            goal_list = []  
+            await bot.send(ev, f'正在搜索行会关键词{goal}')  
+              
+            # 使用 client.callapi 替代 query.query  
+            clan_name_search = await client.callapi('/clan/search_clan', {  
+                'clan_name': goal,   
+                'join_condition': 1,   
+                'member_condition_range': 0,   
+                'activity': 0,   
+                'clan_battle_mode': 0  
+            })  
+              
+            clan_list = ''  
+            for search_clan in clan_name_search['list']:  
+                clan_name = search_clan['clan_name']  
+                clan_list += f'[{clan_name}]'  
+              
+            clan_num = len(clan_name_search['list'])  
+            await bot.send(ev, f'找到{clan_num}个与关键词相关行会,超过5个的将不会查询，请精确化关键词\n{clan_list}')  
+              
+            clan_num = 0  
+            for search_clan in clan_name_search['list']:  
+                if clan_num <= 4:  
+                    search_clan_id = search_clan['clan_id']  
+                    if search_clan_id == 0:   
+                        break  
+                      
+                    clan_most_info = await client.callapi('/clan/others_info', {  
+                        'clan_id': search_clan_id  
+                    })  
+                    clan_most_info = clan_most_info['clan']['detail']['current_period_ranking']  
+                      
+                    if clan_most_info == 0:   
+                        continue  
+                      
+                    goal_list.append(clan_most_info)  
+                    clan_num += 1  
+                else:   
+                    break  
+          
+        if goal_list == []:   
+            return await bot.send(ev, '无法获取排名，可能是官方正在结算，请等待结算后使用本功能')  
+          
+        # 生成图片（简化版，仅文字输出）  
+        msg_list = []  
+          
+        for goal in goal_list:  
+            goal = int(goal)  
+            page = int((goal - 1) / 10)  
+            in_di = goal % 10  
+            if in_di == 0:   
+                in_di = 10  
+              
+            # 获取排名数据  
+            page_info = await client.callapi('/clan_battle/period_ranking', {  
+                'clan_id': clan_id,  
+                'clan_battle_id': clan_battle_id,  
+                'period': 1,   
+                'month': 0,   
+                'page': page,   
+                'is_my_clan': 0,   
+                'is_first': 1  
+            })  
+              
+            if page_info['period_ranking'] == []:  
+                return await bot.send(ev, '当前会战排名正在结算，无法获取数据，请等待官方结算完成后再使用本功能~')  
+              
+            # 查找目标排名  
+            num = 0  
+            for rank in page_info['period_ranking']:  
+                num += 1  
+                if num == in_di:  
+                    rank_num = rank['rank']  
+                    dmg = rank['damage']  
+                    mem = rank['member_num']  
+                    name = rank['clan_name']  
+                    l_name = rank['leader_name']  
+                    g_rank = rank['grade_rank']  
+                      
+                    # 计算周目和进度  
+                    stage = [207300000, 859700000, 4771700000, 9017700000, 999999999999]  
+                    l1 = [  
+                        [7200000, 9600000, 13000000, 16800000, 22500000],  
+                        [9600000, 12800000, 18000000, 22800000, 30000000],  
+                        [24000000, 28000000, 40800000, 45600000, 57200000],  
+                        [66500000, 70000000, 85100000, 95000000, 108000000],  
+                        [297500000, 315000000, 351500000, 380000000, 440000000]  
+                    ]  
+                    lp = [1, 6, 11, 999]  
+                      
+                    lap = 0  
+                    boss = 0  
+                    for stag in stage:  
+                        lap += 1  
+                        if dmg <= stag:  
+                            dmg_left = dmg - stage[lap-2]  
+                            break  
+                      
+                    l_lps = 0  
+                    while dmg_left > 0:  
+                        boss = 0  
+                        for i in l1[lap-1]:  
+                            if dmg_left - i > 0:  
+                                boss += 1  
+                                dmg_left -= i  
+                            else:  
+                                final_dmg = dmg_left  
+                                dmg_left = -1  
+                                break  
+                        l_lps += 1  
+                      
+                    final_lap = lp[lap-2] + l_lps  
+                    progress = (float(final_dmg/i)*100)  
+                    progress = round(progress, 2)  
+                      
+                    msg = f'''  
+排名: {rank_num}位  
+公会名: {name}  
+会长: {l_name}  
+总伤害: {dmg}  
+成员数: {mem}/30  
+上期位次: {g_rank}位  
+当前第 {lap} 阶段 | 第 {final_lap} 周目 {boss+1} 王 | 进度 {progress}%  
+'''  
+                    msg_list.append(msg.strip())  
+                    break  
+          
+        # 发送结果  
+        await bot.send(ev, '\n\n'.join(msg_list))  
+          
+    except Exception as e:  
+        logger.exception(e)  
+        await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')         
