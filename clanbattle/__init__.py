@@ -207,7 +207,7 @@ async def add_monitor(bot, ev):
     acccountinfo = await load_config(os.path.join(DATA_PATH, 'account', f'{qq_id}.json'))
 
     if not acccountinfo:
-        await bot.send(ev, "你没有绑定账号")
+        await bot.send(ev, "你没有绑定账号，请加bot发送 绑定账号1/绑定账号2")
         return
 
     account = acccountinfo[0].get("account") or acccountinfo[0].get("viewer_id") 
@@ -1064,7 +1064,7 @@ async def query_line(bot, ev):
           
         # 处理默认档线查询  
         elif goal == '':  
-            goal_list = [1, 11, 41, 121, 201, 401, 801, 1801, 3001, 6001]  
+            goal_list = [1, 10, 40, 120, 200, 400, 800, 1800, 3000, 6000]  
             await bot.send(ev, '获取数据时间较长，请稍候')  
           
         # 处理公会名搜索  
