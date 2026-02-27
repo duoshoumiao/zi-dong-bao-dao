@@ -883,14 +883,20 @@ async def correct_dao(bot, ev):
     else:
         await bot.send(ev, "请检查你输入了正确的出刀编号")
     
-@sv.on_rex(r'^催刀(\d?)$')  
-async def nei_gui(bot, ev):  
-    group_id = ev.group_id  
-    db = RecordDao(group_id)  
-    data = db.get_day_rcords(int(time.time()))  
-    if not data:  
-        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")  
+@sv.on_rex(r'^催刀(\d?)$')    
+async def nei_gui(bot, ev):    
+    group_id = ev.group_id    
+  
+    # 新增：检查监控状态  
+    if group_id not in clanbattle_info or not clanbattle_info[group_id].loop_check:  
+        await bot.send(ev, "未开启出刀监控，无法使用催刀")  
         return  
+  
+    db = RecordDao(group_id)    
+    data = db.get_day_rcords(int(time.time()))    
+    if not data:    
+        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")    
+        return    
   
     players = day_report(data)  # [(pcrid, name, knife_count), ...]  
   
