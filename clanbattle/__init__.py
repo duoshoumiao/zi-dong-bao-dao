@@ -883,17 +883,59 @@ async def correct_dao(bot, ev):
     else:
         await bot.send(ev, "请检查你输入了正确的出刀编号")
     
-@sv.on_fullmatch('催刀')
-async def nei_gui(bot, ev):
-    group_id = ev.group_id
-    db = RecordDao(group_id)
-    data = db.get_day_rcords(int(time.time()))
-    if not data:
-        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")
-    else:
-        players = day_report(data)
-        result = await cuidao(players, group_id)
-        await bot.send(ev, result)
+@sv.on_rex(r'^催刀(\d?)$')  
+async def nei_gui(bot, ev):  
+    group_id = ev.group_id  
+    db = RecordDao(group_id)  
+    data = db.get_day_rcords(int(time.time()))  
+    if not data:  
+        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")  
+        return  
+  
+    players = day_report(data)  # [(pcrid, name, knife_count), ...]  
+  
+    match = ev['match']  
+    num_str = match.group(1)  
+  
+    if not num_str:  
+        # 不带数字：走原来的 cuidao（标题"以下是还没满三刀的人："）  
+        result = await cuidao(players, group_id)  
+        await bot.send(ev, result)  
+        return  
+  
+    # 带数字：自己过滤 + 自己拼消息，不走 cuidao  
+    threshold = int(num_str)  
+    filtered_players = [  
+        (pcrid, name, knife_count)  
+        for pcrid, name, knife_count in players  
+        if knife_count < threshold  
+    ]  
+  
+    if not filtered_players:  
+        await bot.send(ev, f"所有人出刀数均已达到{threshold}刀，辛苦了！")  
+        return  
+  
+    # 复用 cuidao 的群成员匹配逻辑  
+    group_members = await bot.get_group_member_list(group_id=group_id, no_cache=True)  
+    name_to_uid = {}  
+    for member in group_members:  
+        card = member.get("card", "").strip()  
+        nickname = member.get("nickname", "").strip()  
+        if card:  
+            name_to_uid[card] = member["user_id"]  
+        if nickname and nickname not in name_to_uid:  
+            name_to_uid[nickname] = member["user_id"]  
+  
+    msg = f"以下是还没满{threshold}刀的人：\n"  
+    for pcrid, player_name, knife_count in filtered_players:  
+        uid = name_to_uid.get(player_name.strip())  
+        if uid:  
+            msg += str(MessageSegment.at(uid))  
+        else:  
+            msg += f"@{player_name}（未找到匹配的群成员，请检查昵称）"  
+        msg += "\n"  
+  
+    await bot.send(ev, msg.strip())
 
 @sv.on_fullmatch('会战KPI', '会战kpi')
 async def get_kpi(bot, ev):
