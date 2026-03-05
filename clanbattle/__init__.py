@@ -1083,7 +1083,7 @@ async def check_silent_offline():
             
            
 
-@sv.on_prefix('查档线', '查排名')  
+@sv.on_prefix('查档线')  
 async def query_line(bot, ev):  
       
     group_id = ev.group_id  
@@ -1189,12 +1189,12 @@ async def query_line(bot, ev):
             for rank in page_info['period_ranking']:  
                 num += 1  
                 if num == in_di:  
-                    rank_num = rank['rank']  
-                    dmg = rank['damage']  
-                    mem = rank['member_num']  
-                    name = rank['clan_name']  
-                    l_name = rank['leader_name']  
-                    g_rank = rank['grade_rank']  
+                    rank_num = rank.get('rank', 0)  
+                    dmg = rank.get('damage', 0)  
+                    mem = rank.get('member_num', 0)  
+                    name = rank.get('clan_name', '该公会可能已解散')  
+                    l_name = rank.get('leader_name', '未知')  
+                    g_rank = rank.get('grade_rank', 0)
                       
                     # 计算周目和进度  
                     stage = [0, 1097400000, 8731000000, 17307493000000]  
@@ -1247,7 +1247,7 @@ async def query_line(bot, ev):
           
     except Exception as e:  
         logger.exception(e)  
-        await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')  
+        await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')      
 
 @sv.on_fullmatch('扫描公会')  
 async def scan_clan_ranking(bot, ev):  
@@ -1286,14 +1286,14 @@ async def scan_clan_ranking(bot, ev):
                     break  
   
                 for rank in page_info['period_ranking']:  
-                    rank_num = rank['rank']  
+                    rank_num = rank.get('rank', 0)  
                     all_clans[str(rank_num)] = {  
                         'rank': rank_num,  
-                        'clan_name': rank['clan_name'],  
-                        'leader_name': rank['leader_name'],  
-                        'damage': rank['damage'],  
-                        'member_num': rank['member_num'],  
-                        'grade_rank': rank['grade_rank'],  
+                        'clan_name': rank.get('clan_name', '该公会可能已解散'),  
+                        'leader_name': rank.get('leader_name', '未知'),  
+                        'damage': rank.get('damage', 0),  
+                        'member_num': rank.get('member_num', 0),  
+                        'grade_rank': rank.get('grade_rank', 0),  
                     }  
   
                 if (page + 1) % 100 == 0:  
@@ -1321,53 +1321,53 @@ async def scan_clan_ranking(bot, ev):
         await bot.send(ev, f'扫描出错：{str(e)}')
   
   
-@sv.on_prefix('查会长')  
-async def search_clan_leader(bot, ev):  
-    keyword = ev.message.extract_plain_text().strip()  
-    if not keyword:  
-        return await bot.send(ev, '请输入要搜索的会长关键词，例如：查会长 栞栞')  
+# @sv.on_prefix('查会长')  
+# async def search_clan_leader(bot, ev):  
+    # keyword = ev.message.extract_plain_text().strip()  
+    # if not keyword:  
+        # return await bot.send(ev, '请输入要搜索的会长关键词，例如：查会长 栞栞')  
   
-    if not SCAN_FILE.exists():  
-        return await bot.send(ev, '尚未扫描公会数据，请管理员发送【扫描公会】')  
+    # if not SCAN_FILE.exists():  
+        # return await bot.send(ev, '尚未扫描公会数据，请管理员发送【扫描公会】')  
   
-    with open(SCAN_FILE, 'r', encoding='utf-8') as f:  
-        all_clans = json.load(f)  
+    # with open(SCAN_FILE, 'r', encoding='utf-8') as f:  
+        # all_clans = json.load(f)  
   
-    results = [c for c in all_clans.values() if keyword in c.get('leader_name', '')]  
-    if not results:  
-        return await bot.send(ev, f'未找到会长名包含"{keyword}"的公会')  
+    # results = [c for c in all_clans.values() if keyword in c.get('leader_name', '')]  
+    # if not results:  
+        # return await bot.send(ev, f'未找到会长名包含"{keyword}"的公会')  
   
-    results.sort(key=lambda x: x['rank'])  
-    msg_list = [  
-        f"排名: {c['rank']}位\n公会名: {c['clan_name']}\n会长: {c['leader_name']}\n"  
-        f"总伤害: {c['damage']}\n成员数: {c['member_num']}/30\n上期位次: {c['grade_rank']}位"  
-        for c in results[:20]  
-    ]  
-    total = len(results)  
-    await bot.send(ev, f'找到{total}个匹配结果{"（仅显示前20条）" if total > 20 else ""}：\n\n' + '\n\n'.join(msg_list))  
+    # results.sort(key=lambda x: x['rank'])  
+    # msg_list = [  
+        # f"排名: {c['rank']}位\n公会名: {c['clan_name']}\n会长: {c['leader_name']}\n"  
+        # f"总伤害: {c['damage']}\n成员数: {c['member_num']}/30\n上期位次: {c['grade_rank']}位"  
+        # for c in results[:20]  
+    # ]  
+    # total = len(results)  
+    # await bot.send(ev, f'找到{total}个匹配结果{"（仅显示前20条）" if total > 20 else ""}：\n\n' + '\n\n'.join(msg_list))  
   
   
-@sv.on_prefix('查公会')  
-async def search_clan_name(bot, ev):  
-    keyword = ev.message.extract_plain_text().strip()  
-    if not keyword:  
-        return await bot.send(ev, '请输入要搜索的公会名关键词，例如：查公会名 栞栞')  
+# @sv.on_prefix('查公会')  
+# async def search_clan_name(bot, ev):  
+    # keyword = ev.message.extract_plain_text().strip()  
+    # if not keyword:  
+        # return await bot.send(ev, '请输入要搜索的公会名关键词，例如：查公会名 栞栞')  
   
-    if not SCAN_FILE.exists():  
-        return await bot.send(ev, '尚未扫描公会数据，请管理员发送【扫描公会】')  
+    # if not SCAN_FILE.exists():  
+        # return await bot.send(ev, '尚未扫描公会数据，请管理员发送【扫描公会】')  
   
-    with open(SCAN_FILE, 'r', encoding='utf-8') as f:  
-        all_clans = json.load(f)  
+    # with open(SCAN_FILE, 'r', encoding='utf-8') as f:  
+        # all_clans = json.load(f)  
   
-    results = [c for c in all_clans.values() if keyword in c.get('clan_name', '')]  
-    if not results:  
-        return await bot.send(ev, f'未找到公会名包含"{keyword}"的公会')  
+    # results = [c for c in all_clans.values() if keyword in c.get('clan_name', '')]  
+    # if not results:  
+        # return await bot.send(ev, f'未找到公会名包含"{keyword}"的公会')  
   
-    results.sort(key=lambda x: x['rank'])  
-    msg_list = [  
-        f"排名: {c['rank']}位\n公会名: {c['clan_name']}\n会长: {c['leader_name']}\n"  
-        f"总伤害: {c['damage']}\n成员数: {c['member_num']}/30\n上期位次: {c['grade_rank']}位"  
-        for c in results[:20]  
-    ]  
-    total = len(results)  
-    await bot.send(ev, f'找到{total}个匹配结果{"（仅显示前20条）" if total > 20 else ""}：\n\n' + '\n\n'.join(msg_list)) 
+    # results.sort(key=lambda x: x['rank'])  
+    # msg_list = [  
+        # f"排名: {c['rank']}位\n公会名: {c['clan_name']}\n会长: {c['leader_name']}\n"  
+        # f"总伤害: {c['damage']}\n成员数: {c['member_num']}/30\n上期位次: {c['grade_rank']}位"  
+        # for c in results[:20]  
+    # ]  
+    # total = len(results)  
+    # await bot.send(ev, f'找到{total}个匹配结果{"（仅显示前20条）" if total > 20 else ""}：\n\n' + '\n\n'.join(msg_list)) 
