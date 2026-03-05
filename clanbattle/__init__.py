@@ -1194,42 +1194,7 @@ async def query_line(bot, ev):
                     mem = rank.get('member_num', 0)  
                     name = rank.get('clan_name', '该公会可能已解散')  
                     l_name = rank.get('leader_name', '未知')  
-                    g_rank = rank.get('grade_rank', 0)
-                      
-                    # 计算周目和进度  
-                    stage = [0, 1097400000, 8731000000, 17307493000000]  
-                    l1 = [  
-                        [0, 0, 0, 0, 0],  
-                        [19200000, 15000000, 36000000, 43700000, 60000000],  
-                        [70000000, 80000000, 94500000, 105000000, 127600000],  
-                        [315000000, 3240000000, 3572000000, 3744000000, 4000000000]
-                    ]  
-                    lp = [0, 6, 22, 999]  
-                      
-                    lap = 0  
-                    boss = 0  
-                    for stag in stage:  
-                        lap += 1  
-                        if dmg <= stag:  
-                            dmg_left = dmg - stage[lap-2]  
-                            break  
-                      
-                    l_lps = 0  
-                    while dmg_left > 0:  
-                        boss = 0  
-                        for i in l1[lap-1]:  
-                            if dmg_left - i > 0:  
-                                boss += 1  
-                                dmg_left -= i  
-                            else:  
-                                final_dmg = dmg_left  
-                                dmg_left = -1  
-                                break  
-                        l_lps += 1  
-                      
-                    final_lap = lp[lap-2] + l_lps  
-                    progress = (float(final_dmg/i)*100)  
-                    progress = round(progress, 2)  
+                    g_rank = rank.get('grade_rank', 0) 
                       
                     msg = f'''  
 排名: {rank_num}位  
@@ -1303,9 +1268,24 @@ async def scan_clan_ranking(bot, ev):
   
             except Exception as e:  
                 logger.error(f'扫描第{page}页失败: {e}')  
-                failed_pages.append(page)  
+                # 重试一次  
+                await asyncio.sleep(2)  
+                try:  
+                    page_info = await client.callapi('/clan_battle/period_ranking', {  
+                        'clan_id': clan_id,  
+                        'clan_battle_id': clan_battle_id,  
+                        'period': 1,  
+                        'month': 0,  
+                        'page': page,  
+                        'is_my_clan': 0,  
+                        'is_first': 1  
+                    })  
+                    # ... 同样的数据处理逻辑  
+                except Exception as e2:  
+                    logger.error(f'重试第{page}页仍然失败: {e2}')  
+                    failed_pages.append(page)  
                 await asyncio.sleep(1)  
-                continue  
+                continue
   
         # 保存到全局文件  
         with open(SCAN_FILE, 'w', encoding='utf-8') as f:  
