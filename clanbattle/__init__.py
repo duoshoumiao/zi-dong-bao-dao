@@ -1300,6 +1300,90 @@ async def scan_clan_ranking(bot, ev):
         logger.exception(e)  
         await bot.send(ev, f'扫描出错：{str(e)}')
   
+@sv.on_prefix('透视公会')  
+async def xray_clan(bot, ev):  
+    group_id = ev.group_id  
+  
+    if group_id not in clanbattle_info:  
+        return await bot.send(ev, "请先开启出刀监控")  
+  
+    clan_info = clanbattle_info[group_id]  
+    client = clan_info.client  
+  
+    keyword = ev.message.extract_plain_text().strip()  
+    if not keyword:  
+        return await bot.send(ev, '请输入公会名关键词，例如：透视公会 栞栞')  
+  
+    try:  
+        await bot.send(ev, f'正在搜索行会关键词: {keyword}')  
+  
+        clan_name_search = await client.callapi('/clan/search_clan', {  
+            'clan_name': keyword,  
+            'join_condition': 1,  
+            'member_condition_range': 0,  
+            'activity': 0,  
+            'clan_battle_mode': 0  
+        })  
+  
+        if not clan_name_search.get('list'):  
+            return await bot.send(ev, '未找到匹配的行会')  
+  
+        clan_list_names = [c['clan_name'] for c in clan_name_search['list']]  
+        clan_num = len(clan_list_names)  
+        await bot.send(ev, f'找到{clan_num}个行会，最多查询前5个: {"".join(f"[{n}]" for n in clan_list_names)}')  
+  
+        count = 0  
+        for search_clan in clan_name_search['list']:  
+            if count >= 5:  
+                break  
+            search_clan_id = search_clan['clan_id']  
+            if search_clan_id == 0:  
+                continue  
+  
+            clan_most_info = await client.callapi('/clan/others_info', {  
+                'clan_id': search_clan_id  
+            })  
+  
+            detail = clan_most_info.get('clan', {}).get('detail', {})  
+            members = clan_most_info.get('clan', {}).get('members', [])  
+            clan_name = detail.get('clan_name', '未知')  
+            leader_name = detail.get('leader_name', '未知')  
+            description = detail.get('description', '无')  
+            member_num = detail.get('member_num', 0)  
+            current_ranking = detail.get('current_period_ranking', 0)  
+  
+            rows = []  
+            rows.append(["公会名", clan_name, ""])  
+            rows.append(["会长", leader_name, ""])  
+  
+            # 公会简介分行，每行最多20个字符，避免图片太宽  
+            max_desc_len = 20  
+            if description:  
+                desc_lines = [description[i:i+max_desc_len] for i in range(0, len(description), max_desc_len)]  
+            else:  
+                desc_lines = ["无"]  
+            for idx, line in enumerate(desc_lines):  
+                label = "公会简介" if idx == 0 else ""  
+                rows.append([label, line, ""])  
+  
+            rows.append(["成员数", f"{member_num}/30", ""])  
+            rows.append(["当期排名", f"{current_ranking}位", ""])  
+            rows.append(["───", "── 成员列表 ──", "───"])  
+  
+            for i, m in enumerate(members, 1):  
+                member_name = m.get('name', '???')  
+                member_uid = str(m.get('viewer_id', '???'))  
+                rows.append([str(i), member_name, member_uid])  
+  
+            header = ["编号", "名称", "UID"]  
+            table_img = grid2imgb64(rows, header)  
+  
+            await bot.send(ev, table_img)  
+            count += 1  
+  
+    except Exception as e:  
+        logger.exception(e)  
+        await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')
   
 # @sv.on_prefix('查会长')  
 # async def search_clan_leader(bot, ev):  
