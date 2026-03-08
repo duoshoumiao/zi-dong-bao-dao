@@ -1326,7 +1326,7 @@ async def xray_clan(bot, ev):
         })  
   
         if not clan_name_search.get('list'):  
-            return await bot.send(ev, '未找到匹配的行会')  
+            return await bot.send(ev, '未找到匹配的行会，可能对方开启邀请模式')  
   
         clan_list_names = [c['clan_name'] for c in clan_name_search['list']]  
         clan_num = len(clan_list_names)  
