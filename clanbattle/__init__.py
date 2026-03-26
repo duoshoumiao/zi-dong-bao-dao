@@ -27,6 +27,7 @@ SCAN_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # 全局共享，不区分群  
 SCAN_FILE = SCAN_DATA_DIR / 'clan_ranking_global.json' 
+SCAN_FILE2 = SCAN_DATA_DIR / 'clan_ranking_global2.json'
     
 # 创建服务
 help_text = '''
@@ -1535,6 +1536,102 @@ async def xray_clan(bot, ev):
         logger.exception(e)  
         await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')
   
+@sv.on_fullmatch('渠扫描公会')    
+async def scan_clan_ranking_qu(bot, ev):    
+    if not priv.check_priv(ev, priv.ADMIN):    
+        return await bot.send(ev, '权限不足，当前指令仅管理员可用!')    
+  
+    group_id = ev.group_id    
+    if group_id not in clanbattle_info:    
+        return await bot.send(ev, "请先开启出刀监控")    
+  
+    clan_info = clanbattle_info[group_id]    
+    client = clan_info.client    
+    clan_id = clan_info.clan_id    
+    clan_battle_id = clan_info.clan_battle_id    
+  
+    await bot.send(ev, '【渠道服】开始扫描1-10000排名公会信息，预计需要较长时间，请耐心等待...')    
+  
+    all_clans = {}    
+    failed_pages = []    
+  
+    try:    
+        for page in range(1000):    
+            try:    
+                page_info = await client.callapi('/clan_battle/period_ranking', {    
+                    'clan_id': clan_id,    
+                    'clan_battle_id': clan_battle_id,    
+                    'period': 1,    
+                    'month': 0,    
+                    'page': page,    
+                    'is_my_clan': 0,    
+                    'is_first': 1    
+                })    
+  
+                if page_info['period_ranking'] == []:    
+                    await bot.send(ev, f'第{page}页无数据，已停止扫描')    
+                    break    
+  
+                for rank in page_info['period_ranking']:    
+                    rank_num = rank.get('rank', 0)    
+                    all_clans[str(rank_num)] = {    
+                        'rank': rank_num,    
+                        'clan_name': rank.get('clan_name', '该公会可能已解散'),    
+                        'leader_name': rank.get('leader_name', '未知'),    
+                        'damage': rank.get('damage', 0),    
+                        'member_num': rank.get('member_num', 0),    
+                        'grade_rank': rank.get('grade_rank', 0),    
+                    }    
+  
+                if (page + 1) % 100 == 0:    
+                    await bot.send(ev, f'已扫描至第{(page+1)*10}名...')    
+  
+                await asyncio.sleep(0.3)    
+  
+            except Exception as e:    
+                logger.error(f'渠道服扫描第{page}页失败: {e}')    
+                await asyncio.sleep(2)    
+                try:    
+                    page_info = await client.callapi('/clan_battle/period_ranking', {    
+                        'clan_id': clan_id,    
+                        'clan_battle_id': clan_battle_id,    
+                        'period': 1,    
+                        'month': 0,    
+                        'page': page,    
+                        'is_my_clan': 0,    
+                        'is_first': 1    
+                    })    
+                    # 修复：重试成功后也要处理数据  
+                    if page_info['period_ranking'] != []:  
+                        for rank in page_info['period_ranking']:    
+                            rank_num = rank.get('rank', 0)    
+                            all_clans[str(rank_num)] = {    
+                                'rank': rank_num,    
+                                'clan_name': rank.get('clan_name', '该公会可能已解散'),    
+                                'leader_name': rank.get('leader_name', '未知'),    
+                                'damage': rank.get('damage', 0),    
+                                'member_num': rank.get('member_num', 0),    
+                                'grade_rank': rank.get('grade_rank', 0),    
+                            }  
+                except Exception as e2:    
+                    logger.error(f'渠道服重试第{page}页仍然失败: {e2}')    
+                    failed_pages.append(page)    
+                await asyncio.sleep(1)    
+                continue  
+  
+        # 保存到渠道服全局文件    
+        with open(SCAN_FILE2, 'w', encoding='utf-8') as f:    
+            json.dump(all_clans, f, ensure_ascii=False, indent=2)    
+  
+        msg = f'【渠道服】扫描完成！共获取{len(all_clans)}个公会信息，已保存至渠道服全局文件。'    
+        if failed_pages:    
+            msg += f'\n失败页码：{failed_pages[:20]}'    
+        await bot.send(ev, msg)    
+  
+    except Exception as e:    
+        logger.exception(e)    
+        await bot.send(ev, f'渠道服扫描出错：{str(e)}')
+
 # @sv.on_prefix('查会长')  
 # async def search_clan_leader(bot, ev):  
     # keyword = ev.message.extract_plain_text().strip()  
