@@ -5,10 +5,10 @@ import traceback
 from hoshino import Service
 from nonebot import get_bot, on_command, logger
 from .pcrclient import pcrclient, bsdkclient
-from .playerpref import decryptxml
 from asyncio import Lock
 from .util.tools import DATA_PATH, check_client, write_config, load_config
-
+import re as re_module  
+from .playerpref import decryptxml, decrypt_udid  
 sv_help = '【#绑定账号+账号+密码】加号为空格'
 
 sv = Service('你只需要好好出刀2', help_=sv_help, visible=True, enable_on_default=False)
@@ -83,6 +83,47 @@ async def query(acccount_info, is_force=False):
         raise Exception(f"未知错误：{e}")
 
 
+  
+@on_command("渠绑定账号")  
+async def qu_bind_xml(session):  
+    content = session.ctx['message'].extract_plain_text()  
+    qq_id = session.ctx['user_id']  
+  
+    # 提取 viewer_id（长数字串）  
+    viewer_match = re_module.search(r'(\d{10,})', content)  
+    if not viewer_match:  
+        await bot.send_private_msg(user_id=qq_id, message="未找到 viewer_id")  
+        return  
+    viewer_id = viewer_match.group(1)  
+  
+    # 提取 XML 条目  
+    xml_match = re_module.search(r'(<string name=".*?">.*?</string>)', content)  
+    if not xml_match:  
+        await bot.send_private_msg(user_id=qq_id, message="未找到 XML 条目，格式：#渠道绑定xml viewer_id <string ...>...</string>")  
+        return  
+  
+    try:  
+        udid = decrypt_udid(xml_match.group(1))  
+    except Exception as e:  
+        await bot.send_private_msg(user_id=qq_id, message=f"UDID 解密失败：{e}")  
+        return  
+  
+    acccount = {  
+        'platform': 4,  
+        'channel': 1,  
+        'qudao': 1,  
+        'uid': viewer_id,  
+        'access_key': udid,  
+    }  
+    try:  
+        client = await query([acccount.copy()], True)  
+        if await check_client(client):  
+            await write_config(os.path.join(account_path, f'{qq_id}.json'), [acccount])  
+            await bot.send_private_msg(user_id=qq_id, message="渠道服绑定成功")  
+    except Exception as e:  
+        logger.info(traceback.format_exc())  
+        await bot.send_private_msg(user_id=qq_id, message="渠道服绑定失败：" + str(e))
+        
 @on_command("#绑定账号")
 async def bind_support(session):
     acccount = {'platform': 2, 'channel': 1, }

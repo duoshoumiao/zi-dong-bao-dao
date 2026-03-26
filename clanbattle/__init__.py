@@ -499,6 +499,156 @@ async def add_monitor(bot, ev):
                 run_group[group_id] = ev.self_id
         await asyncio.sleep(1)
 
+@sv.on_fullmatch('渠出刀监控')  
+async def add_qu_monitor(bot, ev):  
+    qq_id = ev.user_id  
+  
+    if ev.message[0].type == 'at':  
+        if not priv.check_priv(ev, priv.ADMIN):  
+            await bot.send(ev, '权限不足')  
+            return  
+        else:  
+            qq_id = int(ev.message[0].data['qq'])  
+  
+    group_id = ev.group_id  
+    acccountinfo = await load_config(os.path.join(DATA_PATH, 'account', f'{qq_id}.json'))  
+  
+    if not acccountinfo:  
+        await bot.send(ev, "你没有绑定渠道服账号，请私聊bot发送 #渠道绑定账号 viewer_id UDID")  
+        return  
+  
+    account = acccountinfo[0].get("uid") or acccountinfo[0].get("account")  
+    await bot.send(ev, f"正在登录渠道服账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")  
+  
+    try:  
+        client = await query(acccountinfo)  
+        if not await check_client(client):  
+            raise Exception("登录异常，请重试")  
+        if group_id not in clanbattle_info:  
+            clanbattle_info[group_id] = ClanBattle(group_id)  
+        clan_info: ClanBattle = clanbattle_info[group_id]  
+        await clan_info.init(client, qq_id)  
+    except Exception as e:  
+        await bot.send(ev, str(e))  
+        return  
+  
+    run_group[group_id] = ev.self_id  
+    loop_num = clan_info.loop_num  
+    clan_info.loop_check = time.time()  
+    await bot.send(ev, f"开始监控中, 可以发送【取消出刀监控】或者顶号退出\n#监控编号HN000{loop_num}")  
+    while True:  
+        async with semaphore:  
+            try:  
+                if loop_num != clan_info.loop_num:  
+                    clan_info.loop_check = False  
+                    raise CancleError  
+  
+                clan_info.loop_check = time.time()  
+                clan_battle_top = await clan_info.get_clanbattle_top()  
+                clan_info.lap_num = clan_battle_top["lap_num"]  
+                clan_info.rank = clan_battle_top["period_rank"]  
+  
+                if clan_info.period != stage_dict[lap2stage(clan_battle_top["lap_num"])]:  
+                    await safe_send(bot, ev, f"阶段从{stage_dict[clan_info.period]}面到了{lap2stage(clan_battle_top['lap_num'])}面，请注意轴的切换喵")  
+                    clan_info.period = stage_dict[lap2stage(clan_info.lap_num)]  
+  
+                change = False  
+                for i, boss in enumerate(clan_info.boss):  
+                    current_boss = clan_battle_top["boss_info"][i]  
+                    current_hp, order, max_hp, lap_num = current_boss["current_hp"], current_boss["order_num"], current_boss["max_hp"], current_boss["lap_num"]  
+                    if current_hp and (subscribe_text := await clan_info.subscribe.notify_subscribe(order, lap_num, clan_info.lap_num)):  
+                        clan_info.notice_subscribe.append(subscribe_text)  
+  
+                    if fighter_num := await clan_info.refresh_fighter_num(lap_num, order):  
+                        msg = f"{i+1}王当前有{fighter_num}人出刀"  
+                        clan_info.notice_fighter.append(msg)  
+                        records = load_progress_records(ev.group_id)  
+                        records.append({  
+                            'message': msg,  
+                            'time': str(datetime.datetime.now())  
+                        })  
+                        if len(records) > 100:  
+                            records = records[-100:]  
+                        save_progress_records(ev.group_id, records)  
+  
+                    if current_hp != boss.current_hp or lap_num != boss.lap_num:  
+                        change = True  
+                        boss.refresh(current_hp, lap_num, order, max_hp)  
+  
+                await safe_send(bot, ev, "\n".join(clan_info.notice_subscribe))  
+                await safe_send(bot, ev, "\n".join(clan_info.notice_fighter))  
+                clan_info.notice_subscribe.clear()  
+                clan_info.notice_fighter.clear()  
+  
+                if change:  
+                    for history in clan_battle_top["damage_history"]:  
+                        if history["create_time"] > clan_info.latest_time:  
+                            msg = f'{history["name"]}对{history["lap_num"]}周目{history["order_num"]}王造成了{history["damage"]}点伤害。'  
+                            clan_info.notice_dao.append(msg)  
+                            try:  
+                                group_members = await bot.get_group_member_list(group_id=group_id)  
+                                name_to_uid = {}  
+                                for member in group_members:  
+                                    card = member.get("card", "").strip()  
+                                    nickname = member.get("nickname", "").strip()  
+                                    if card:  
+                                        name_to_uid[card] = member["user_id"]  
+                                    if nickname:  
+                                        name_to_uid[nickname] = member["user_id"]  
+                                uid = name_to_uid.get(history["name"].strip())  
+                                if uid:  
+                                    apply_dao = ApplyDao(group_id)  
+                                    apply_dao.delete_apply(uid)  
+                                    logger.info(f'自动取消用户{history["name"]}(uid={uid})的出刀申请')  
+                            except Exception as e:  
+                                logger.error(f'')  
+                            records = load_progress_records(ev.group_id)  
+                            records.append({  
+                                'message': msg,  
+                                'time': str(datetime.datetime.now())  
+                            })  
+                            if len(records) > 100:  
+                                records = records[-100:]  
+                            save_progress_records(ev.group_id, records)  
+                            if history["kill"]:  
+                                await safe_send(bot, ev, clan_info.general_boss())  
+                                if offtree_text := await clan_info.tree.notify_tree(history["order_num"]):  
+                                    clan_info.notice_tree.append(offtree_text)  
+                                clan_info.apply.clear_apply(history["order_num"])  
+  
+                    clan_info.refresh_latest_time(clan_battle_top)  
+                    await safe_send(bot, ev, "\n".join(clan_info.notice_dao[::-1]))  
+                    clan_info.notice_dao.clear()  
+                    await safe_send(bot, ev, "\n".join(clan_info.notice_tree))  
+                    clan_info.notice_tree.clear()  
+  
+                clan_info.error_count = 0  
+                await clan_info.add_record(clan_battle_top["damage_history"], loop_num)  
+  
+            except Exception as e:  
+                print(traceback.format_exc())  
+                clan_info.loop_check = False  
+                del run_group[group_id]  
+  
+                if loop_num != clan_info.loop_num:  
+                    await bot.send(ev, f"#编号HN000{loop_num}监控已关闭")  
+                    return  
+  
+                if not await check_client(clan_info.client):  
+                    await bot.send(ev, "当前账号被顶号，监控已退出")  
+                    return  
+  
+                if clan_info.error_count > 3:  
+                    clan_info.error_count = 0  
+                    await bot.send(ev, "超过最大重试次数，监控已退出")  
+                    return  
+  
+                clan_info.loop_check = True  
+                clan_info.error_count += 1  
+                run_group[group_id] = ev.self_id  
+        await asyncio.sleep(1)
+
+
 @sv.on_fullmatch('取消出刀监控')
 async def delete_monitor(bot, ev):
     group_id = ev.group_id

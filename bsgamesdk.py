@@ -74,18 +74,22 @@ async def login(bili_account, bili_pwd, make_captch):
     return await _login(bili_account, bili_pwd, challenge, gt_user_id, validate_key)
 
 
-class bsdkclient:
-
-    def __init__(self, acccountinfo: dict, captchaVerifier=None):
-        self.acccountinfo = acccountinfo
-        self.qudao = 0
-        self.platform = "2"
-        self.captchaVerifier = captchaVerifier
-
-    async def b_login(self):
-        if self.qudao == 0:
-            for i in range(3):
-                resp = await login(self.acccountinfo['account'], self.acccountinfo['password'], self.captchaVerifier)
-                if resp['code'] == 0:
-                    logger.info("geetest or captcha succeed")
-                    return resp['uid'], resp['access_key']
+class bsdkclient:  
+    def __init__(self, acccountinfo: dict, captchaVerifier=None):  
+        self.acccountinfo = acccountinfo  
+        self.qudao = acccountinfo.get('qudao', 0)  
+        self.captchaVerifier = captchaVerifier  
+        if self.qudao == 0:  
+            self.platform = "2"  
+        else:  
+            self.platform = "4"  
+  
+    async def b_login(self):  
+        if self.qudao == 0:  
+            for i in range(3):  
+                resp = await login(self.acccountinfo['account'], self.acccountinfo['password'], self.captchaVerifier)  
+                if resp['code'] == 0:  
+                    logger.info("geetest or captcha succeed")  
+                    return resp['uid'], resp['access_key']  
+        elif self.qudao == 1:  
+            return self.acccountinfo['uid'], self.acccountinfo['access_key']

@@ -21,6 +21,19 @@ def _ivstring() -> str:
 def _encode(dat: str) -> str:
     return f'{len(dat):0>4x}' + ''.join([(chr(ord(dat[int(i / 4)]) + 10) if i % 4 == 2 else choice('0123456789')) for i in range(0, len(dat) * 4)]) + _ivstring()
 
+def decrypt_udid(xml_entry):  
+    """从单个 <string> XML 条目中解密 UDID"""  
+    for m in finditer(r'<string name="(.*)">(.*)</string>', xml_entry):  
+        g = m.groups()  
+        try:  
+            k = _deckey(g[0]).decode('utf8')  
+        except:  
+            continue  
+        if k == 'UDID':  
+            val = _decval(k, g[1])  
+            return ''.join([chr(val[4 * i + 6] - 10) for i in range(36)]).replace("-", "")  
+    raise ValueError("未找到 UDID 条目")
+
 def decryptxml(content):
     result = {}
     for re in finditer(r'<string name="(.*)">(.*)</string>', content):
