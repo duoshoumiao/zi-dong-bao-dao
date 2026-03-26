@@ -6,7 +6,8 @@ from pathlib import Path
 import datetime
 from nonebot import get_bot
 from hoshino import Service, priv
-from ..login import query
+from ..login import query, captcha_lck, manual_captch_result
+from .. import login as login_module  
 from ..support_query import record_monitor
 from ..util.tools import load_config, write_config, safe_send, check_client, DATA_PATH, stage_dict
 from .base import *
@@ -215,7 +216,7 @@ async def add_monitor(bot, ev):
     await bot.send(ev, f"正在登录账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")
     
     try:
-        client = await query(acccountinfo)
+        client = await query(acccountinfo, group_id=group_id)
         if not await check_client(client):
             raise Exception("登录异常，请重试")
         # 初始化
@@ -379,7 +380,7 @@ async def add_monitor(bot, ev):
     await bot.send(ev, f"正在登录账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")
     
     try:
-        client = await query(acccountinfo)
+        client = await query(acccountinfo, group_id=group_id)
         if not await check_client(client):
             raise Exception("登录异常，请重试")
         # 初始化
@@ -522,7 +523,7 @@ async def add_qu_monitor(bot, ev):
     await bot.send(ev, f"正在登录渠道服账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")  
   
     try:  
-        client = await query(acccountinfo)  
+        client = await query(acccountinfo, group_id=group_id)  
         if not await check_client(client):  
             raise Exception("登录异常，请重试")  
         if group_id not in clanbattle_info:  

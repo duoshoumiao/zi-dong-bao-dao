@@ -9,6 +9,10 @@ from asyncio import Lock
 from .util.tools import DATA_PATH, check_client, write_config, load_config
 import re as re_module  
 from .playerpref import decryptxml, decrypt_udid  
+# 手动过码相关  
+gt_wait = 90  # 手动过码等待时限（秒）  
+captcha_lck = asyncio.Lock()  
+manual_captch_result = None
 sv_help = '【#绑定账号+账号+密码】加号为空格'
 
 sv = Service('你只需要好好出刀2', help_=sv_help, visible=True, enable_on_default=False)
@@ -64,22 +68,67 @@ async def captchaVerifier(*args):
         except Exception as e:
             raise Exception(f"自动过码异常，{e}")
 
+async def manual_captch(challenge: str, gt: str, user_id: str, group_id: int, bili_account: str):  
+    """向群聊发送验证链接，等待群友提交验证结果"""  
+    global manual_captch_result, captcha_lck  
+    manual_captch_result = None  # 重置结果  
+      
+    url = f"https://help.tencentbot.top/geetest/?captcha_type=1&challenge={challenge}&gt={gt}&userid={user_id}&gs=1"  
+    await bot.send_group_msg(  
+        group_id=group_id,  
+        message=f'账号{bili_account}登录触发验证码，自动过码失败。\n请在{gt_wait}秒内完成以下链接中的验证，将第1个方框的内容复制，并加上"bdval "前缀在群里发送\n示例：bdval 123456789'  
+    )  
+    await bot.send_group_msg(group_id=group_id, message=url)  
+      
+    if not captcha_lck.locked():  
+        await captcha_lck.acquire()  
+      
+    try:  
+        await asyncio.wait_for(captcha_lck.acquire(), gt_wait)  
+        captcha_lck.release()  
+        if manual_captch_result:  
+            return (challenge, user_id, manual_captch_result)  
+        else:  
+            raise RuntimeError("手动过码结果为空")  
+    except asyncio.TimeoutError:  
+        await bot.send_group_msg(group_id=group_id, message="手动过码超时，验证失败")  
+        raise RuntimeError("手动过码获取结果超时")  
+    except Exception as e:  
+        await bot.send_group_msg(group_id=group_id, message=f'手动过码异常：{e}')  
+        raise e
 
-async def query(acccount_info, is_force=False):
-    try:
-        acccount_info = acccount_info[0].copy()
-        player = acccount_info.get('account', 0) or acccount_info.get('uid')
-        if player in client_cache and not is_force:
-            client = client_cache[player]
-            if await check_client(client):
-                return client
-        client = pcrclient(bsdkclient(acccount_info, captchaVerifier))
-        await client.login()
-        if await check_client(client):
-            client_cache[player] = client
-            return client
-        raise Exception(f"登录失败，请重试")
-    except Exception as e:
+async def query(acccount_info, is_force=False, group_id=None):  
+    try:  
+        acccount_info = acccount_info[0].copy()  
+        player = acccount_info.get('account', 0) or acccount_info.get('uid')  
+        if player in client_cache and not is_force:  
+            client = client_cache[player]  
+            if await check_client(client):  
+                return client  
+          
+        # 如果提供了 group_id，创建带手动过码回退的 verifier  
+        if group_id:  
+            async def captchaVerifier_with_fallback(*args):  
+                gt, challenge, userid = args[0], args[1], args[2]  
+                try:  
+                    return await captchaVerifier(gt, challenge, userid)  
+                except Exception as e:  
+                    logger.error(f'自动过码失败: {e}，尝试群聊手动过码')  
+                    account_display = str(player)  
+                    if len(account_display) > 6:  
+                        account_display = account_display[:3] + "***" + account_display[-3:]  
+                    return await manual_captch(challenge, gt, userid, group_id, account_display)  
+            verifier = captchaVerifier_with_fallback  
+        else:  
+            verifier = captchaVerifier  
+          
+        client = pcrclient(bsdkclient(acccount_info, verifier))  
+        await client.login()  
+        if await check_client(client):  
+            client_cache[player] = client  
+            return client  
+        raise Exception(f"登录失败，请重试")  
+    except Exception as e:  
         raise Exception(f"未知错误：{e}")
 
 
