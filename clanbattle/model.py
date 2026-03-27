@@ -153,7 +153,7 @@ class ClanBattle:
                         # 用 damage_history 验证（排除 battle_time<90 但实际未击破的情况）  
                         if damage_history and damage_history[-1]["create_time"] <= time <= damage_history[0]["create_time"]:  
                             for history in damage_history:  
-                                if history["create_time"] == time and not history["kill"]:  
+                                if history["create_time"] == time and history["name"] == name and not history["kill"]:  
                                     is_kill = False  
                                     break  
                     else:  
