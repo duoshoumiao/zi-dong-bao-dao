@@ -942,7 +942,7 @@ async def today_state(bot, ev):
     db = RecordDao(group_id)
     data = db.get_day_rcords(int(time.time()))
     if not data:
-        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")
+        await bot.send(ev, "Ciallo ( ・ω )<~，今日无人出刀or未开启监控")
     players = day_report(data)
     result = await get_stat(players, group_id)
     await bot.send(ev, result)
@@ -954,7 +954,7 @@ async def yesterday_state(bot, ev):
     db = RecordDao(group_id)
     data = db.get_day_rcords(int(time.time()) - 3600 * 24)
     if not data:
-        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")
+        await bot.send(ev, "Ciallo ( ・ω )<~，无人出刀or未开启监控")
     players = day_report(data)
     result = await get_stat(players, group_id)
     await bot.send(ev, result)
@@ -983,7 +983,7 @@ async def get_report(bot, ev):
     db = RecordDao(group_id)
     data = db.get_all_records()
     if not data:
-        await bot.send(ev, "Ciallo ( ・ω )<~，请重新监控")
+        await bot.send(ev, "Ciallo ( ・ω )<~，无人出刀or未开启监控")
         return
     max_dao = db.get_max_dao()
     players, all_damage, all_score = clanbattle_report(data, max_dao)
