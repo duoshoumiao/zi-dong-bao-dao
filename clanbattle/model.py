@@ -148,7 +148,7 @@ class ClanBattle:
   
                     # === 第一步：判断是否击破 ===  
                     is_kill = False  
-                    if battle_time < 90:  
+                    if battle_time < remain_time: 
                         is_kill = True  
                         # 用 damage_history 验证（排除 battle_time<90 但实际未击破的情况）  
                         if damage_history and damage_history[-1]["create_time"] <= time <= damage_history[0]["create_time"]:  
@@ -157,7 +157,7 @@ class ClanBattle:
                                     is_kill = False  
                                     break  
                     else:  
-                        # battle_time >= 90 的边缘击破情况  
+                        # battle_time >= remain_time 的边缘击破情况
                         if damage_history and damage_history[-1]["create_time"] <= time <= damage_history[0]["create_time"]:  
                             for history in damage_history:  
                                 if history["create_time"] == time and history["kill"]:  
