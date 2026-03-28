@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import re
 from hoshino import get_bot
 from .bigfun import get_boss_info,get_record
 from ..util.text2img import image_draw
@@ -48,6 +49,7 @@ def format_precent(num):
     if num < 0.00005:
         return "血皮"
     return f"{num*100:.2f}%"
+
 
 def clanbattle_report(info, max_dao):
     player_info = {}
@@ -103,54 +105,53 @@ async def get_stat(data,group_id):
 
 
 
-from hoshino import get_bot
-import re
+
 
 def clean_name(name):
     """去掉特殊字符，用于模糊匹配"""
     return re.sub(r"[^\w\u4e00-\u9fff]", "", name).lower()
 
-async def cuidao(data, group_id):
-    config_file = os.path.join(clan_path, f'{group_id}', "clanbattle.json")
-    config = await load_config(config_file)
-    member_dao = []
-    for member in data:
-        if member[2] >= 3:
-            member_dao.append(member[1])
-    
-    member_names = list(set(config["member"]) - set(member_dao))
-    if not member_names:
-        return "今天所有刀都出啦。下班下班。"
-    
-    # 获取 bot 实例
-    bot = get_bot()
-    if not bot:
-        return "机器人未就绪，请稍后再试。"
-    
-    # 获取群成员列表，并建立 群名片/QQ昵称 -> QQ号 的映射
-    group_members = await bot.get_group_member_list(group_id=group_id)
-    name_to_qq = {}
-    for m in group_members:
-        # 优先用群名片（card），没有则用QQ昵称（nickname）
-        name = m.get("card", "").strip() or m["nickname"].strip()
-        name_to_qq[name] = m["user_id"]
-    
-    # 可选：建立模糊匹配（去掉特殊字符）
-    cleaned_name_to_qq = {clean_name(name): qq for name, qq in name_to_qq.items()}
-    
-    at_list = []
-    for name in member_names:
-        # 先精确匹配
-        qq = name_to_qq.get(name.strip())
-        if not qq:
-            # 如果精确匹配失败，尝试模糊匹配
-            qq = cleaned_name_to_qq.get(clean_name(name.strip()))
-        
-        if qq:
-            at_list.append(f"[CQ:at,qq={qq}]")
-        else:
-            at_list.append(f"@{name}（未找到匹配的群成员，请检查昵称）")
-    
+async def cuidao(data, group_id):  
+    config_file = os.path.join(clan_path, f'{group_id}', "clanbattle.json")  
+    config = await load_config(config_file)  
+    member_dao = []  
+    for member in data:  
+        if member[2] >= 3:  
+            member_dao.append(member[1])  
+      
+    member_names = list(set(config["member"]) - set(member_dao))  
+    if not member_names:  
+        return "今天所有刀都出啦。下班下班。"  
+      
+    # 读取 Web 页面配置的 QQ 映射  
+    cuidao_qq_map = config.get("cuidao_qq_map", {})  
+      
+    bot = get_bot()  
+    if not bot:  
+        return "机器人未就绪，请稍后再试。"  
+      
+    # 群名片匹配作为 fallback  
+    group_members = await bot.get_group_member_list(group_id=group_id)  
+    name_to_qq = {}  
+    for m in group_members:  
+        name = m.get("card", "").strip() or m["nickname"].strip()  
+        name_to_qq[name] = m["user_id"]  
+    cleaned_name_to_qq = {clean_name(name): qq for name, qq in name_to_qq.items()}  
+      
+    at_list = []  
+    for name in member_names:  
+        # 优先使用 Web 配置的 QQ 映射  
+        qq = cuidao_qq_map.get(name.strip())  
+        if not qq:  
+            qq = name_to_qq.get(name.strip())  
+        if not qq:  
+            qq = cleaned_name_to_qq.get(clean_name(name.strip()))  
+          
+        if qq:  
+            at_list.append(f"[CQ:at,qq={qq}]")  
+        else:  
+            at_list.append(f"@{name}（未配置QQ，请访问管理页面设置）")  
+      
     return "以下是还没满三刀的人：\n" + "\n".join(at_list)
 async def get_cbreport(data,total_damage,total_score):
     reply = []

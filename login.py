@@ -42,7 +42,7 @@ async def captchaVerifier(*args):
             res = res.json()
             uuid = res["uuid"]
             ccnt = 0
-            while (ccnt := ccnt + 1) < 10:
+            while (ccnt := ccnt + 1) < 2:
                 res = await AsyncClient.get(url=f"https://pcrd.tencentbot.top/check/{uuid}", headers=captcha_header)
                 res = res.json()
 

@@ -19,6 +19,7 @@ import time
 import asyncio
 import logging
 from hoshino.typing import CQEvent, MessageSegment
+from .webserver import start_web_server, get_public_url  # 确认 import 了 get_public_url  
 # 初始化logger
 logger = logging.getLogger(__name__)
   
@@ -102,7 +103,31 @@ sv = Service(
     enable_on_default=False,
     help_=help_text,
 )
+# 启动 Web 服务器  
+asyncio.get_event_loop().create_task(start_web_server())
 
+@sv.on_fullmatch('催刀设置', '催刀管理')  
+async def cuidao_setting(bot, ev):  
+    if not priv.check_priv(ev, priv.ADMIN):  
+        await bot.send(ev, '权限不足')  
+        return  
+    group_id = ev.group_id  
+    base_url = await get_public_url()          # 用这个，不要用 WEB_HOST  
+    url = f"{base_url}/cuidao/{group_id}"  
+    await bot.send(ev, f"请访问以下链接配置催刀QQ映射：\n{url}")
+    
+@sv.on_prefix('bdval')  
+async def on_bd_validate(bot, ev):  
+    validate_value = ev.message.extract_plain_text().strip()  
+    if not validate_value:  
+        return  
+    login_module.manual_captch_result = validate_value  
+    try:  
+        login_module.captcha_lck.release()  
+    except RuntimeError:  
+        pass  
+    await bot.send(ev, '验证码已提交')    
+    
 @sv.on_rex(r'^查进\s*([1-5])$')  # 只匹配 查进1 到 查进5
 async def query_progress(bot, ev: CQEvent):
     if not ev.group_id:
@@ -1038,8 +1063,12 @@ async def correct_dao(bot, ev):
     else:
         await bot.send(ev, "请检查你输入了正确的出刀编号")
     
-@sv.on_rex(r'^催刀(\d?)$')    
-async def nei_gui(bot, ev):    
+@sv.on_rex(r'^催刀(\d?)$')      
+async def nei_gui(bot, ev):      
+    # 新增：管理员权限检查  
+    if not priv.check_priv(ev, priv.ADMIN):  
+        await bot.send(ev, '催刀功能仅管理员可用')  
+        return    
     group_id = ev.group_id    
   
     # 新增：检查监控状态  
