@@ -108,16 +108,22 @@ async def query(acccount_info, is_force=False, group_id=None):
           
         # 如果提供了 group_id，创建带手动过码回退的 verifier  
         if group_id:  
-            async def captchaVerifier_with_fallback(*args):  
-                gt, challenge, userid = args[0], args[1], args[2]  
-                try:  
-                    return await captchaVerifier(gt, challenge, userid)  
-                except Exception as e:  
-                    logger.error(f'自动过码失败: {e}，尝试群聊手动过码')  
-                    account_display = str(player)  
-                    if len(account_display) > 6:  
-                        account_display = account_display[:3] + "***" + account_display[-3:]  
-                    return await manual_captch(challenge, gt, userid, group_id, account_display)  
+            async def captchaVerifier_with_fallback(*args):    
+                gt, challenge, userid = args[0], args[1], args[2]    
+                try:    
+                    return await asyncio.wait_for(captchaVerifier(gt, challenge, userid), timeout=60)    
+                except asyncio.TimeoutError:    
+                    logger.error(f'自动过码超过60秒，转手动过码')    
+                    account_display = str(player)    
+                    if len(account_display) > 6:    
+                        account_display = account_display[:3] + "***" + account_display[-3:]    
+                    return await manual_captch(challenge, gt, userid, group_id, account_display)    
+                except Exception as e:    
+                    logger.error(f'自动过码失败: {e}，尝试群聊手动过码')    
+                    account_display = str(player)    
+                    if len(account_display) > 6:    
+                        account_display = account_display[:3] + "***" + account_display[-3:]    
+                    return await manual_captch(challenge, gt, userid, group_id, account_display)
             verifier = captchaVerifier_with_fallback  
         else:  
             verifier = captchaVerifier  
