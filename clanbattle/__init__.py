@@ -125,8 +125,76 @@ async def on_bd_validate(bot, ev):
         login_module.captcha_lck.release()  
     except RuntimeError:  
         pass  
-    await bot.send(ev, '验证码已提交')    
+    await bot.send(ev, '验证码已提交')     
     
+@sv.on_fullmatch('查击破')  
+async def query_kill_all(bot, ev: CQEvent):  
+    if not ev.group_id:  
+        await bot.send(ev, '请在群聊中使用此功能')  
+        return  
+      
+    records = load_progress_records(ev.group_id)  
+      
+    if not records:  
+        await bot.send(ev, '暂无出刀/伤害记录')  
+        return  
+      
+    filtered_records = [  
+        r for r in records   
+        if "击破" in r['message']  
+    ]  
+      
+    if not filtered_records:  
+        await bot.send(ev, '暂无击破记录')  
+        return  
+      
+    sorted_records = sorted(filtered_records, key=lambda x: x['time'], reverse=True)  
+    display_records = sorted_records[:10]  
+      
+    try:  
+        user_info = await bot.get_group_member_info(group_id=ev.group_id, user_id=ev.user_id)  
+        nickname = user_info.get('nickname', str(ev.user_id))  
+    except:  
+        nickname = str(ev.user_id)  
+      
+    await send_forward_message_with_player_reports(bot, ev, f"{nickname}的击破记录", display_records, ev.group_id) 
+    
+@sv.on_rex(r'^查击破\s*([1-5])$')  
+async def query_kill(bot, ev: CQEvent):  
+    if not ev.group_id:  
+        await bot.send(ev, '请在群聊中使用此功能')  
+        return  
+      
+    match = ev['match']  
+    boss_num = int(match.group(1))  
+      
+    records = load_progress_records(ev.group_id)  
+      
+    if not records:  
+        await bot.send(ev, '暂无出刀/伤害记录')  
+        return  
+      
+    filtered_records = [  
+        r for r in records   
+        if (f"{boss_num}王" in r['message'] or f"对{boss_num}王" in r['message'])  
+        and "击破" in r['message']  
+    ]  
+      
+    if not filtered_records:  
+        await bot.send(ev, f'暂无{boss_num}王的击破记录')  
+        return  
+      
+    sorted_records = sorted(filtered_records, key=lambda x: x['time'], reverse=True)  
+    display_records = sorted_records[:10]  
+      
+    try:  
+        user_info = await bot.get_group_member_info(group_id=ev.group_id, user_id=ev.user_id)  
+        nickname = user_info.get('nickname', str(ev.user_id))  
+    except:  
+        nickname = str(ev.user_id)  
+      
+    await send_forward_message_with_player_reports(bot, ev, f"{nickname}的{boss_num}王击破记录", display_records, ev.group_id)
+
 @sv.on_rex(r'^查进\s*([1-5])$')  # 只匹配 查进1 到 查进5
 async def query_progress(bot, ev: CQEvent):
     if not ev.group_id:
@@ -168,53 +236,87 @@ async def query_progress(bot, ev: CQEvent):
     # 发送合并转发消息
     await send_forward_message(bot, ev, f"{nickname}的{boss_num}王出刀记录", display_records)
 
-async def send_forward_message(bot, ev: CQEvent, nickname, records):
-    """
-    发送分段合并转发消息（复用谁艾特我的逻辑）
-    """
-    try:
-        messages = []
-        
-        # 添加标题节点
-        messages.append({
-            "type": "node",
-            "data": {
-                "name": nickname,
-                "uin": str(bot.self_id),
-                "content": f"以下是最近{len(records)}条出刀记录（按时间倒序排列）："
-            }
-        })
-        
-        # 为每条记录添加独立节点
-        for i, record in enumerate(records, 1):
-            # 格式化时间
-            record_time = datetime.datetime.strptime(record['time'], '%Y-%m-%d %H:%M:%S.%f')
-            formatted_time = record_time.strftime('%Y-%m-%d %H:%M:%S')
-            
-            # 构建节点内容
-            content = f"{i}. {formatted_time}\n"
-            content += f"   {record['message']}"
-            
-            messages.append({
-                "type": "node",
-                "data": {
-                    "name": nickname,
-                    "uin": str(bot.self_id),
-                    "content": content
-                }
-            })
-        
-        # 发送合并转发消息
-        await bot.send_group_forward_msg(group_id=ev.group_id, messages=messages)
-    except Exception as e:
-        logger.error(f"合并转发失败: {e}")
-        # 降级为普通消息发送
-        try:
-            await bot.send(ev, f"以下是最近{len(records)}条出刀记录（按时间倒序排列）：")
-            for msg in messages[1:]:  # 跳过标题节点
-                await bot.send(ev, msg["data"]["content"])
-                await asyncio.sleep(0.5)
-        except Exception as fallback_error:
+def extract_player_name(message):  
+    """从出刀记录消息中提取玩家名称"""  
+    idx = message.find('对')  
+    if idx > 0:  
+        return message[:idx]  
+    return None
+
+async def send_forward_message_with_player_reports(bot, ev, title, records, group_id):  
+    """  
+    发送合并转发消息，每条击破记录下方附带该玩家的今日战报图片  
+    """  
+    try:  
+        messages = []  
+          
+        # 添加标题节点  
+        messages.append({  
+            "type": "node",  
+            "data": {  
+                "name": title,  
+                "uin": str(bot.self_id),  
+                "content": f"以下是最近{len(records)}条击破记录（按时间倒序排列）："  
+            }  
+        })  
+          
+        # 缓存已生成的玩家战报图片，避免同一玩家重复生成  
+        player_report_cache = {}  
+        db = RecordDao(group_id)  
+          
+        for i, record in enumerate(records, 1):  
+            # 格式化时间  
+            record_time = datetime.datetime.strptime(record['time'], '%Y-%m-%d %H:%M:%S.%f')  
+            formatted_time = record_time.strftime('%Y-%m-%d %H:%M:%S')  
+              
+            # 构建文本节点  
+            content = f"{i}. {formatted_time}\n"  
+            content += f"   {record['message']}"  
+              
+            messages.append({  
+                "type": "node",  
+                "data": {  
+                    "name": title,  
+                    "uin": str(bot.self_id),  
+                    "content": content  
+                }  
+            })  
+              
+            # 提取玩家名并生成今日战报图片  
+            player_name = extract_player_name(record['message'])  
+            if player_name:  
+                if player_name not in player_report_cache:  
+                    try:  
+                        player_data = db.get_player_records(player_name, 0)  # day=0 表示今日  
+                        if player_data:  
+                            img = await get_plyerreport(player_data)  
+                            player_report_cache[player_name] = img  
+                        else:  
+                            player_report_cache[player_name] = None  
+                    except Exception as e:  
+                        logger.error(f"生成{player_name}的今日战报失败: {e}")  
+                        player_report_cache[player_name] = None  
+                  
+                report_img = player_report_cache.get(player_name)  
+                if report_img:  
+                    messages.append({  
+                        "type": "node",  
+                        "data": {  
+                            "name": f"{player_name}的今日战报",  
+                            "uin": str(bot.self_id),  
+                            "content": report_img  
+                        }  
+                    })  
+          
+        await bot.send_group_forward_msg(group_id=ev.group_id, messages=messages)  
+    except Exception as e:  
+        logger.error(f"合并转发失败: {e}")  
+        try:  
+            await bot.send(ev, f"以下是最近{len(records)}条击破记录：")  
+            for msg in messages[1:]:  
+                await bot.send(ev, msg["data"]["content"])  
+                await asyncio.sleep(0.5)  
+        except Exception as fallback_error:  
             logger.error(f"降级发送也失败: {fallback_error}")
 
 
