@@ -63,7 +63,6 @@ help_text = '''
 【清空申请出刀+数字】boss死活收不掉，先清理一波申请
 【查进】查看最近的出刀和伤害记录
 【查进 + 1/2/3/4/5】查看指定王的出刀记录
-【查补偿刀/查补偿】查看今日还未出的补偿刀及对应boss
 '''.strip()
 
 bot = get_bot()
@@ -1665,55 +1664,6 @@ async def scan_clan_ranking_qu(bot, ev):
         logger.exception(e)    
         await bot.send(ev, f'渠道服扫描出错：{str(e)}')
 
-@sv.on_fullmatch('查补偿刀', '查补偿')  
-async def check_compensation(bot, ev):  
-    group_id = ev.group_id  
-  
-    # 检查监控状态  
-    if group_id not in clanbattle_info or not clanbattle_info[group_id].loop_check:  
-        await bot.send(ev, "未开启出刀监控，无法查询补偿刀")  
-        return  
-  
-    db = RecordDao(group_id)  
-    data = db.get_day_records_ordered(int(time.time()))  
-    if not data:  
-        await bot.send(ev, "今日暂无出刀记录")  
-        return  
-  
-    # 按玩家分组，收集尾刀和补偿刀记录（按时间排序）  
-    from collections import defaultdict  
-    player_tails = defaultdict(list)   # name -> [尾刀记录列表，按时间顺序]  
-    player_comps = defaultdict(int)    # name -> 已出补偿刀数量  
-  
-    for record in data:  
-        name = record['name']  
-        flag = record['flag']  
-        if flag == 1:  # 尾刀（击破boss，产生补偿刀）  
-            player_tails[name].append(record)  
-        elif flag == 0.5:  # 补偿刀（已使用）  
-            player_comps[name] += 1  
-  
-    # 找出未出补偿刀：每个玩家的尾刀列表中，前 comp_count 个已被消耗，剩余的是未出的  
-    pending = []  
-    for name, tails in player_tails.items():  
-        comp_used = player_comps.get(name, 0)  
-        remaining_tails = tails[comp_used:]  # 跳过已消耗的，剩余的尾刀对应未出补偿  
-        for tail in remaining_tails:  
-            pending.append({  
-                'name': name,  
-                'lap': tail['lap'],  
-                'boss': tail['boss'],  
-                'battle_log_id': tail['battle_log_id'],  
-            })  
-  
-    if not pending:  
-        await bot.send(ev, "当前没有未出的补偿刀")  
-        return  
-  
-    msg = "以下是还未出的补偿刀：\n"  
-    for p in pending:  
-        msg += f"  {p['name']}：{p['lap']}周目{p['boss']}王的补偿刀未出（出刀编号：{p['battle_log_id']}）\n"  
-    await bot.send(ev, msg.strip())
 
 # @sv.on_prefix('查会长')  
 # async def search_clan_leader(bot, ev):  

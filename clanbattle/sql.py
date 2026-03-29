@@ -451,70 +451,7 @@ class RecordDao(SqliteDao):
                     return None
                 return [{'pcrid': r[0], 'name': r[1], 'lap':r[2], 'boss':r[3], 'damage':r[4], 'flag':r[5]} for r in result]
             except (sqlite3.DatabaseError) as e:
-                raise
-
-    
-    def get_day_flag_counts(self, date: int):  
-        """统计某个PCR日每个玩家的各类刀数（normal/kill/comp）"""  
-        date = pcr_date(date)  
-        tomorrow = date + timedelta(days=1)  
-        with self._connect() as conn:  
-            try:  
-                result = conn.execute(  
-                    f"SELECT pcrid, flag, COUNT(*) FROM {self._table} "  
-                    f"WHERE time BETWEEN ? AND ? "  
-                    f"GROUP BY pcrid, flag",  
-                    (date.timestamp(), tomorrow.timestamp())  
-                ).fetchall()  
-                counts = {}  
-                if result:  
-                    for r in result:  
-                        pid = str(r[0])  
-                        flag_val = r[1]  
-                        cnt = r[2]  
-                        if pid not in counts:  
-                            counts[pid] = {'normal': 0, 'kill': 0, 'comp': 0}  
-                        if flag_val == 0:  
-                            counts[pid]['normal'] = cnt  
-                        elif flag_val == 1:  
-                            counts[pid]['kill'] = cnt  
-                        elif flag_val == 0.5:  
-                            counts[pid]['comp'] = cnt  
-                return counts  
-            except (sqlite3.DatabaseError) as e:  
-                raise
-    
-    def get_day_normal_count(self, date: int):  
-        """统计当天每个玩家的正刀数（完整刀flag=0 + 尾刀flag=1），不使用DISTINCT"""  
-        date = pcr_date(date)  
-        tomorrow = date + timedelta(days=1)  
-        with self._connect() as conn:  
-            try:  
-                result = conn.execute(  
-                    f"SELECT pcrid, COUNT(*) FROM {self._table} "  
-                    f"WHERE time BETWEEN ? AND ? AND flag IN (0, 1) "  
-                    f"GROUP BY pcrid",  
-                    (date.timestamp(), tomorrow.timestamp())  
-                ).fetchall()  
-                return {str(r[0]): r[1] for r in result} if result else {}  
-            except (sqlite3.DatabaseError) as e:  
-                raise
-    
-    def get_day_records_ordered(self, date: int):  
-        date = pcr_date(date)  
-        tomorrow = date + timedelta(days=1)  
-        with self._connect() as conn:  
-            try:  
-                result = conn.execute(  
-                    f"SELECT DISTINCT pcrid, name, lap, boss, damage, flag, battle_log_id, time "  
-                    f"FROM {self._table} WHERE time BETWEEN ? AND ? ORDER BY time ASC",  
-                    (date.timestamp(), tomorrow.timestamp())  
-                ).fetchall()  
-                if not result:  
-                    return None  
-                return [{'pcrid': r[0], 'name': r[1], 'lap': r[2], 'boss': r[3], 'damage': r[4], 'flag': r[5], 'battle_log_id': r[6], 'time': r[7]} for r in result]  
-            except (sqlite3.DatabaseError) as e:  
-                raise                                          
+                raise                                     
     
     def get_past_damage(self, lap, boss, pcrid):
         with self._connect() as conn:  # 尾刀前造成的伤害
