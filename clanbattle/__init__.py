@@ -30,7 +30,19 @@ SCAN_DATA_DIR.mkdir(parents=True, exist_ok=True)
 # 全局共享，不区分群  
 SCAN_FILE = SCAN_DATA_DIR / 'clan_ranking_global.json' 
 SCAN_FILE2 = SCAN_DATA_DIR / 'clan_ranking_global2.json'
+<<<<<<< HEAD
+# ======================== GitHub 配置 ========================  
+GITHUB_PAT = os.environ.get('GITHUB_PAT', '')  
+GITHUB_REPO = 'duoshoumiao/chagonghui'  
+GITHUB_FILE_PATH = 'clan_scan/clan_ranking_global.json'  
+GITHUB_API_BASE = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}'  
+  
+# 自动扫描配置（运行时状态，由"开启自动扫描"指令设置）  
+# 格式: {'group_id': int, 'self_id': int} 或 None  
+auto_scan_config = None    
+=======
     
+>>>>>>> parent of adfebf9 (Update webserver.py)
 # 创建服务
 help_text = '''
 * “+” 表示空格
