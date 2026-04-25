@@ -1,5 +1,5 @@
 from urllib.parse import unquote
-from re import finditer
+from re import finditer, match as re_match
 from base64 import b64decode
 from struct import unpack
 from random import choice
@@ -21,18 +21,6 @@ def _ivstring() -> str:
 def _encode(dat: str) -> str:
     return f'{len(dat):0>4x}' + ''.join([(chr(ord(dat[int(i / 4)]) + 10) if i % 4 == 2 else choice('0123456789')) for i in range(0, len(dat) * 4)]) + _ivstring()
 
-def decrypt_udid(xml_entry):  
-    """从单个 <string> XML 条目中解密 UDID"""  
-    for m in finditer(r'<string name="(.*)">(.*)</string>', xml_entry):  
-        g = m.groups()  
-        try:  
-            k = _deckey(g[0]).decode('utf8')  
-        except:  
-            continue  
-        if k == 'UDID':  
-            val = _decval(k, g[1])  
-            return ''.join([chr(val[4 * i + 6] - 10) for i in range(36)]).replace("-", "")  
-    raise ValueError("未找到 UDID 条目")
 
 def decryptxml(content):
     result = {}
@@ -53,3 +41,13 @@ def decryptxml(content):
             val = str(unpack('i', val)[0])
         result[key] = val
     return result['UDID'].replace("-", ""), result["viewer_id"]
+
+def decrypt_access_key(content: str) -> str:  
+    """从加密的 XML 条目中解密 access_key"""  
+    g = re_match(r'<string name="(.*)">(.*)<(.*)ing>', content).groups()  
+    return "".join(  
+        [  
+            chr(_decval(_deckey(g[0]).decode("utf8"), g[1])[4 * i + 6] - 10)  
+            for i in range(36)  
+        ]  
+    ).replace("-", "")

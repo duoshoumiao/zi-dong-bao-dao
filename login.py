@@ -3,22 +3,22 @@ import os
 import httpx
 import traceback
 from hoshino import Service
-from nonebot import get_bot, on_command, logger
+from nonebot import get_bot, on_command, on_notice, logger
 from .pcrclient import pcrclient, bsdkclient
 from asyncio import Lock
 from .util.tools import DATA_PATH, check_client, write_config, load_config
 import re as re_module  
-from .playerpref import decryptxml, decrypt_udid  
+from .playerpref import decryptxml, decrypt_access_key
 # 手动过码相关  
 gt_wait = 90  # 手动过码等待时限（秒）  
 captcha_lck = asyncio.Lock()  
 manual_captch_result = None
-sv_help = '【#绑定账号+账号+密码】加号为空格'
+sv_help = '【绑定账号1+账号+密码】加号为空格\n【渠绑定账号+login_id+token】加号为空格\n也可以直接发送 v2.playerprefs 文件自动绑定渠道服'
 
 sv = Service('你只需要好好出刀2', help_=sv_help, visible=True, enable_on_default=False)
 
 
-@sv.on_fullmatch('#绑定账号帮助', only_to_me=False)
+@sv.on_fullmatch('绑定账号帮助', only_to_me=False)
 async def send_jjchelp(bot, ev):
     await bot.send_private_msg(user_id=ev.user_id, message=sv_help)
 
@@ -140,41 +140,36 @@ async def query(acccount_info, is_force=False, group_id=None):
 
   
 @on_command("渠绑定账号")  
-async def qu_bind_xml(session):  
-    content = session.ctx['message'].extract_plain_text()  
+async def bind_support_qu(session):  
+    content = session.ctx['message'].extract_plain_text().split()  
     qq_id = session.ctx['user_id']  
   
-    # 提取 viewer_id（长数字串）  
-    viewer_match = re_module.search(r'(\d{10,})', content)  
-    if not viewer_match:  
-        await bot.send_private_msg(user_id=qq_id, message="未找到 viewer_id")  
-        return  
-    viewer_id = viewer_match.group(1)  
-  
-    # 提取 XML 条目  
-    xml_match = re_module.search(r'(<string name=".*?">.*?</string>)', content)  
-    if not xml_match:  
-        await bot.send_private_msg(user_id=qq_id, message="未找到 XML 条目，格式：#渠道绑定xml viewer_id <string ...>...</string>")  
-        return  
-  
-    try:  
-        udid = decrypt_udid(xml_match.group(1))  
-    except Exception as e:  
-        await bot.send_private_msg(user_id=qq_id, message=f"UDID 解密失败：{e}")  
+    if len(content) == 3:  
+        # 格式: 渠绑定账号 login_id token  
+        login_id = content[1]  
+        password = content[2]  
+    elif len(content) == 4:  
+        # 格式: 渠绑定账号 login_id <加密token1> <加密token2>  
+        login_id = content[1]  
+        password = decrypt_access_key(f"{content[2]} {content[3]}")  
+    else:  
+        await bot.send_private_msg(user_id=qq_id, message=sv_help)  
         return  
   
     acccount = {  
         'platform': 4,  
         'channel': 1,  
         'qudao': 1,  
-        'uid': viewer_id,  
-        'access_key': udid,  
+        'uid': login_id,  
+        'access_key': password,  
     }  
     try:  
         client = await query([acccount.copy()], True)  
         if await check_client(client):  
             await write_config(os.path.join(account_path, f'{qq_id}.json'), [acccount])  
             await bot.send_private_msg(user_id=qq_id, message="渠道服绑定成功")  
+        else:  
+            await bot.send_private_msg(user_id=qq_id, message="渠道服绑定失败，请检查数据是否完整")  
     except Exception as e:  
         logger.info(traceback.format_exc())  
         await bot.send_private_msg(user_id=qq_id, message="渠道服绑定失败：" + str(e))
@@ -197,3 +192,60 @@ async def bind_support(session):
         except Exception as e:
             logger.info(traceback.format_exc())
             await bot.send_private_msg(user_id=qq_id, message="绑定失败" + str(e))
+
+@on_notice("offline_file")  
+async def qu_bind_file(session):  
+    """通过QQ离线文件上传 v2.playerprefs 或 base.track 自动绑定渠道服账号"""  
+    file = session.ctx.get('file', {})  
+    # 防止过大文件  
+    if file.get("size", 0) // 1024 // 1024 >= 1:  
+        return  
+  
+    file_name = file.get("name", "")  
+    if "v2.playerprefs" not in file_name and "base.track" not in file_name:  
+        return  
+  
+    qq_id = session.ctx['user_id']  
+    try:  
+        async with httpx.AsyncClient() as AsyncClient:  
+            res = await AsyncClient.get(url=file["url"])  
+            content = res.content.decode()  
+  
+        if "bilibili.priconne" in file_name:  
+            # 渠道服 v2.playerprefs  
+            udid, viewer_id = decryptxml(content)  
+            acccount = {  
+                'platform': 4,  
+                'channel': 1,  
+                'qudao': 1,  
+                'uid': viewer_id,  
+                'access_key': udid,  
+            }  
+        elif "base.track" in file_name:  
+            # base.track 文件  
+            acccount = None  
+            for m in re_module.finditer(r'<string name="(.*)">(\d{22})</string>', content):  
+                acccount = {  
+                    'platform': 4,  
+                    'channel': 1,  
+                    'qudao': 1,  
+                    'uid': m.groups()[1],  
+                    'access_key': '',  
+                }  
+                break  
+            if not acccount:  
+                await bot.send_private_msg(user_id=qq_id, message="未在文件中找到有效账号信息")  
+                return  
+        else:  
+            return  
+  
+        await bot.send_private_msg(user_id=qq_id, message="接受文件成功，正在验证登录...")  
+        client = await query([acccount.copy()], True)  
+        if await check_client(client):  
+            await write_config(os.path.join(account_path, f'{qq_id}.json'), [acccount])  
+            await bot.send_private_msg(user_id=qq_id, message="文件绑定成功")  
+        else:  
+            await bot.send_private_msg(user_id=qq_id, message="文件绑定失败，登录验证未通过")  
+    except Exception as e:  
+        logger.info(traceback.format_exc())  
+        await bot.send_private_msg(user_id=qq_id, message="文件绑定失败：" + str(e))
