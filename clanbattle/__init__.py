@@ -1,3 +1,5 @@
+import base64  
+import requests
 import re
 import os
 import traceback
@@ -19,7 +21,6 @@ import time
 import asyncio
 import logging
 from hoshino.typing import CQEvent, MessageSegment
-from .webserver import start_web_server, get_public_url  # 确认 import 了 get_public_url  
 # 初始化logger
 logger = logging.getLogger(__name__)
   
@@ -30,20 +31,92 @@ SCAN_DATA_DIR.mkdir(parents=True, exist_ok=True)
 # 全局共享，不区分群  
 SCAN_FILE = SCAN_DATA_DIR / 'clan_ranking_global.json' 
 SCAN_FILE2 = SCAN_DATA_DIR / 'clan_ranking_global2.json'
-<<<<<<< HEAD
 # ======================== GitHub 配置 ========================  
 GITHUB_PAT = os.environ.get('GITHUB_PAT', '')  
 GITHUB_REPO = 'duoshoumiao/chagonghui'  
 GITHUB_FILE_PATH = 'clan_scan/clan_ranking_global.json'  
 GITHUB_API_BASE = f'https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}'  
   
+# -------------- 合并转发工具函数 --------------
+QLOGO_AVATAR = "https://q1.qlogo.cn/g?b=qq&nk={qq}&s=40"
+
+async def send_forward_message(bot, ev, title, records):
+    try:
+        messages = []
+        messages.append({
+            "type": "node",
+            "data": {
+                "name": title,
+                "uin": str(bot.self_id),
+                "content": f"共计 {len(records)} 条出刀记录"
+            }
+        })
+        for record in records:
+            msg_text = f"{record['time']}\n{record['message']}"
+            messages.append({
+                "type": "node",
+                "data": {
+                    "name": "出刀记录",
+                    "uin": str(bot.self_id),
+                    "content": msg_text
+                }
+            })
+        await bot.send_group_forward_msg(group_id=ev.group_id, messages=messages)
+    except Exception as e:
+        logger.error(f"转发失败: {e}")
+        await bot.send(ev, f"{title}：\n" + "\n".join([f"{r['time']} {r['message']}" for r in records]))
+# -------------------------------------------
 # 自动扫描配置（运行时状态，由"开启自动扫描"指令设置）  
 # 格式: {'group_id': int, 'self_id': int} 或 None  
 auto_scan_config = None    
-=======
-    
->>>>>>> parent of adfebf9 (Update webserver.py)
 # 创建服务
+
+def _get_github_file_sha():  
+    """获取 GitHub 上文件的当前 SHA"""  
+    headers = {'Accept': 'application/vnd.github.v3+json'}  
+    if GITHUB_PAT:  
+        headers['Authorization'] = f'token {GITHUB_PAT}'  
+    resp = requests.get(GITHUB_API_BASE, headers=headers)  
+    if resp.status_code == 200:  
+        return resp.json().get('sha')  
+    return None  
+  
+  
+def _upload_scan_to_github():  
+    """将本地扫描数据上传到 GitHub"""  
+    if not GITHUB_PAT:  
+        logger.warning('[自动扫描] 未配置 GITHUB_PAT，跳过上传')  
+        return False  
+    if not SCAN_FILE.exists():  
+        logger.warning('[自动扫描] 本地数据文件不存在，跳过上传')  
+        return False  
+    try:  
+        with open(SCAN_FILE, 'r', encoding='utf-8') as f:  
+            content = f.read()  
+        content_b64 = base64.b64encode(content.encode('utf-8')).decode('utf-8')  
+        headers = {  
+            'Authorization': f'token {GITHUB_PAT}',  
+            'Accept': 'application/vnd.github.v3+json',  
+        }  
+        sha = _get_github_file_sha()  
+        payload = {  
+            'message': '自动更新公会排名数据',  
+            'content': content_b64,  
+            'branch': 'main',  
+        }  
+        if sha:  
+            payload['sha'] = sha  
+        resp = requests.put(GITHUB_API_BASE, json=payload, headers=headers)  
+        if resp.status_code in (200, 201):  
+            logger.info('[自动扫描] 公会数据已成功上传到 GitHub')  
+            return True  
+        else:  
+            logger.error(f'[自动扫描] 上传失败: HTTP {resp.status_code} {resp.json().get("message", "")}')  
+            return False  
+    except Exception as e:  
+        logger.exception(f'[自动扫描] 上传异常: {e}')  
+        return False
+        
 help_text = '''
 * “+” 表示空格
 【出刀监控/出刀监控2】机器人登录账号，监视出刀情况并记录
@@ -114,18 +187,7 @@ sv = Service(
     enable_on_default=False,
     help_=help_text,
 )
-# 启动 Web 服务器  
-asyncio.get_event_loop().create_task(start_web_server())
 
-@sv.on_fullmatch('催刀设置', '催刀管理')  
-async def cuidao_setting(bot, ev):  
-    if not priv.check_priv(ev, priv.ADMIN):  
-        await bot.send(ev, '权限不足')  
-        return  
-    group_id = ev.group_id  
-    base_url = await get_public_url()          # 用这个，不要用 WEB_HOST  
-    url = f"{base_url}/cuidao/{group_id}"  
-    await bot.send(ev, f"请访问以下链接配置催刀QQ映射：\n{url}")
     
 @sv.on_prefix('bdval')  
 async def on_bd_validate(bot, ev):  
@@ -1378,7 +1440,128 @@ async def check_silent_offline():
         except Exception as e:  
             pass   
             
-           
+@sv.scheduled_job('cron', minute='0,30')  
+async def auto_scan_and_upload():  
+    """每小时的整点和30分自动扫描公会排名并上传到 GitHub"""  
+    global auto_scan_config  
+    if auto_scan_config is None:  
+        return  
+  
+    group_id = auto_scan_config['group_id']  
+    self_id = auto_scan_config['self_id']  
+  
+    # 检查该群的监控是否仍然活跃  
+    if group_id not in clanbattle_info:  
+        logger.warning(f'[自动扫描] 群 {group_id} 不在 clanbattle_info 中，跳过')  
+        return  
+  
+    clan_info = clanbattle_info[group_id]  
+    if not clan_info.loop_check:  
+        logger.warning(f'[自动扫描] 群 {group_id} 的出刀监控未运行，跳过')  
+        return  
+  
+    client = clan_info.client  
+    clan_id = clan_info.clan_id  
+    clan_battle_id = clan_info.clan_battle_id  
+  
+    logger.info(f'[自动扫描] 开始自动扫描，使用群 {group_id} 的账号')  
+  
+    bot = get_bot()  
+    try:  
+        all_clans = {}  
+        failed_pages = []  
+  
+        for page in range(1000):  
+            try:  
+                page_info = await client.callapi('/clan_battle/period_ranking', {  
+                    'clan_id': clan_id,  
+                    'clan_battle_id': clan_battle_id,  
+                    'period': 1,  
+                    'month': 0,  
+                    'page': page,  
+                    'is_my_clan': 0,  
+                    'is_first': 1  
+                })  
+                if page_info['period_ranking'] == []:  
+                    break  
+                for rank in page_info['period_ranking']:  
+                    rank_num = rank.get('rank', 0)  
+                    all_clans[str(rank_num)] = {  
+                        'rank': rank_num,  
+                        'clan_name': rank.get('clan_name', '该公会可能已解散'),  
+                        'leader_name': rank.get('leader_name', '未知'),  
+                        'damage': rank.get('damage', 0),  
+                        'member_num': rank.get('member_num', 0),  
+                        'grade_rank': rank.get('grade_rank', 0),  
+                    }  
+                await asyncio.sleep(0.3)  
+            except Exception as e:  
+                logger.error(f'[自动扫描] 第{page}页失败: {e}')  
+                await asyncio.sleep(2)  
+                try:  
+                    page_info = await client.callapi('/clan_battle/period_ranking', {  
+                        'clan_id': clan_id,  
+                        'clan_battle_id': clan_battle_id,  
+                        'period': 1,  
+                        'month': 0,  
+                        'page': page,  
+                        'is_my_clan': 0,  
+                        'is_first': 1  
+                    })  
+                    if page_info['period_ranking'] != []:  
+                        for rank in page_info['period_ranking']:  
+                            rank_num = rank.get('rank', 0)  
+                            all_clans[str(rank_num)] = {  
+                                'rank': rank_num,  
+                                'clan_name': rank.get('clan_name', '该公会可能已解散'),  
+                                'leader_name': rank.get('leader_name', '未知'),  
+                                'damage': rank.get('damage', 0),  
+                                'member_num': rank.get('member_num', 0),  
+                                'grade_rank': rank.get('grade_rank', 0),  
+                            }  
+                except Exception as e2:  
+                    logger.error(f'[自动扫描] 重试第{page}页仍然失败: {e2}')  
+                    failed_pages.append(page)  
+                await asyncio.sleep(1)  
+                continue  
+  
+        if not all_clans:  
+            logger.warning('[自动扫描] 未获取到任何公会数据')  
+            return  
+  
+        # 保存到本地  
+        with open(SCAN_FILE, 'w', encoding='utf-8') as f:  
+            json.dump(all_clans, f, ensure_ascii=False, indent=2)  
+  
+        logger.info(f'[自动扫描] 扫描完成，共 {len(all_clans)} 个公会')  
+  
+        # 上传到 GitHub  
+        upload_ok = _upload_scan_to_github()  
+  
+        # 向绑定群发送通知  
+        try:  
+            result_msg = f'[自动扫描] 完成，共 {len(all_clans)} 个公会'  
+            if failed_pages:  
+                result_msg += f'，失败页: {len(failed_pages)}'  
+            result_msg += '，已上传GitHub' if upload_ok else '，GitHub上传失败'  
+            await bot.send_group_msg(  
+                self_id=self_id,  
+                group_id=group_id,  
+                message=result_msg  
+            )  
+        except Exception:  
+            pass  
+  
+    except Exception as e:  
+        logger.exception(f'[自动扫描] 出错: {e}')  
+        try:  
+            await bot.send_group_msg(  
+                self_id=self_id,  
+                group_id=group_id,  
+                message=f'[自动扫描] 出错: {e}'  
+            )  
+        except Exception:  
+            pass           
 
 @sv.on_prefix('查档线')  
 async def query_line(bot, ev):  
@@ -1510,6 +1693,53 @@ async def query_line(bot, ev):
     except Exception as e:  
         logger.exception(e)  
         await bot.send(ev, f'出现错误, 请重试:\n{str(e)}')      
+
+@sv.on_fullmatch('开启自动扫描')  
+async def enable_auto_scan(bot, ev):  
+    global auto_scan_config  
+    if not priv.check_priv(ev, priv.ADMIN):  
+        return await bot.send(ev, '权限不足，仅管理员可执行此操作')  
+  
+    group_id = ev.group_id  
+    if group_id not in clanbattle_info:  
+        return await bot.send(ev, '请先开启出刀监控，再开启自动扫描')  
+  
+    clan_info = clanbattle_info[group_id]  
+    if not clan_info.loop_check:  
+        return await bot.send(ev, '当前出刀监控未在运行中，请先开启出刀监控')  
+  
+    auto_scan_config = {  
+        'group_id': group_id,  
+        'self_id': ev.self_id,  
+    }  
+    await bot.send(ev, f'已开启自动扫描，将在每小时的整点和30分自动扫描公会排名并上传GitHub。\n使用当前群({group_id})的监控账号。\n发送【关闭自动扫描】可关闭。')  
+  
+  
+@sv.on_fullmatch('关闭自动扫描')  
+async def disable_auto_scan(bot, ev):  
+    global auto_scan_config  
+    if not priv.check_priv(ev, priv.ADMIN):  
+        return await bot.send(ev, '权限不足，仅管理员可执行此操作')  
+  
+    if auto_scan_config is None:  
+        return await bot.send(ev, '当前未开启自动扫描')  
+  
+    auto_scan_config = None  
+    await bot.send(ev, '已关闭自动扫描')  
+  
+  
+@sv.on_fullmatch('自动扫描状态')  
+async def auto_scan_status(bot, ev):  
+    if auto_scan_config is None:  
+        return await bot.send(ev, '自动扫描：未开启')  
+    gid = auto_scan_config['group_id']  
+    msg = f'自动扫描：已开启\n绑定群：{gid}'  
+    if gid in clanbattle_info:  
+        ci = clanbattle_info[gid]  
+        msg += f'\n监控状态：{"运行中" if ci.loop_check else "已停止"}'  
+    else:  
+        msg += '\n监控状态：未找到（可能需要重新开启出刀监控）'  
+    await bot.send(ev, msg)
 
 @sv.on_fullmatch('扫描公会')  
 async def scan_clan_ranking(bot, ev):  
