@@ -140,7 +140,7 @@ class pcrclient:
                 if self.viewer_id is not None:
                     request['viewer_id'] = b64encode(pcrclient.encrypt(
                         str(self.viewer_id), key)) if crypted else str(self.viewer_id)
-                response = (await self.client.post(get_api_root(self.bsdk.qudao) + apiurl, data=pcrclient.pack(request, key) if crypted else str(request).encode('utf8'), headers=self.headers, timeout=20)).content
+                response = (await self.client.post(get_api_root(self.bsdk.qudao) + apiurl, data=pcrclient.pack(request, key) if crypted else str(request).encode('utf8'), headers=self.headers, timeout=60)).content
                 
                 response = pcrclient.unpack(
                     response)[0] if crypted else loads(response)

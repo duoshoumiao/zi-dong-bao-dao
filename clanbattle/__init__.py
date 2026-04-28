@@ -1163,12 +1163,14 @@ async def yesterday_state(bot, ev):
     await bot.send(ev, result)
 
 
-@sv.on_fullmatch('回归性原理')
-async def bigfun_check(bot, ev):
-    try:
-        msg = await bigfun_fix(ev.group_id, RecordDao(ev.group_id))
-    except Exception as e:
-        msg = str(e)
+@sv.on_fullmatch('回归性原理')  
+async def bigfun_check(bot, ev):  
+    try:  
+        msg = await bigfun_fix(ev.group_id, RecordDao(ev.group_id))  
+    except Exception as e:  
+        msg = f'执行失败（{type(e).__name__}）：{str(e) or repr(e)}'  
+    if not msg:  
+        msg = '执行完成，但未返回任何结果'  
     await bot.send(ev, msg)
 
 
@@ -1193,6 +1195,58 @@ async def get_report(bot, ev):
     img = await get_cbreport(players, all_damage, all_score)
     await bot.send(ev, img)
 
+@sv.on_fullmatch('绑定团队战工具帮助')  
+async def bindtool_help(bot, ev):  
+    help_msg = """绑定团队战工具步骤：  
+1. 在浏览器中打开 https://bigfun.bilibili.com/tools#/pages/gzlj  
+2. 登录你的B站账号  
+3. 按F12打开开发者工具，切换到Network(网络)标签  
+4. 刷新页面，找到任意一个请求，复制请求头中的Cookie值  
+5. 在群内发送：绑定团队战工具 你的cookie内容  
+  
+注意：cookie中需要包含DedeUserID和SESSDATA等关键字段"""  
+    await bot.send(ev, help_msg)  
+  
+  
+@sv.on_prefix('绑定团队战工具')  
+async def bindtool(bot, ev):  
+    if not priv.check_priv(ev, priv.ADMIN):  
+        await bot.send(ev, '权限不足，需要管理员权限')  
+        return  
+      
+    cookie_str = ev.message.extract_plain_text().strip()  
+    if not cookie_str:  
+        await bot.send(ev, '请在指令后附上cookie内容，发送"绑定团队战工具帮助"查看说明')  
+        return  
+      
+    group_id = ev.group_id  
+    config_file = os.path.join(clan_path, f'{group_id}', "clanbattle.json")  
+      
+    # 确保目录存在  
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)  
+      
+    config = dict(await load_config(config_file))  
+      
+    # 解析cookie字符串为dict  
+    cookie_dict = {}  
+    for item in cookie_str.split(';'):  
+        item = item.strip()  
+        if '=' in item:  
+            key, value = item.split('=', 1)  
+            cookie_dict[key.strip()] = value.strip()  
+      
+    if not cookie_dict:  
+        await bot.send(ev, 'cookie格式不正确，请检查后重试')  
+        return  
+      
+    config["cookie"] = cookie_dict  
+      
+    try:  
+        with open(config_file, 'w', encoding='utf-8') as f:  
+            json.dump(config, f, ensure_ascii=False)  
+        await bot.send(ev, '团队战工具cookie绑定成功！')  
+    except Exception as e:  
+        await bot.send(ev, f'绑定失败：{str(e)}')
 
 @sv.on_prefix('今日战报', '昨日战报', "我的战报")
 async def player_report(bot, ev):

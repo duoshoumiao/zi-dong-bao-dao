@@ -479,38 +479,38 @@ class RecordDao(SqliteDao):
             else:
                 return 0
 
-    async def bigfun_check(self, records):
-        with self._connect() as conn:
-            try:
-                for record in records:
-                    for member in record:
-                        for record in member['damage_list']:
-                            time = record['datetime']
-                            flag = 0.5 if record['reimburse'] == 1 else record['kill']
-                            damage = record['damage']
-                            result = conn.execute(f'SELECT time, flag FROM {self._table} where time = {time}').fetchone()
-                            if result:
-                                conn.execute(f"UPDATE {self._table} SET flag = {flag}, damage = {damage} where time = {time}")
-            except (sqlite3.DatabaseError) as e:
+    async def bigfun_check(self, records):  
+        with self._connect() as conn:  
+            try:  
+                for record in records:  
+                    time = record['datetime']  
+                    flag = 0.5 if record['reimburse'] == 1 else record['kill']  
+                    damage = record['damage']  
+                    result = conn.execute(f'SELECT time, flag FROM {self._table} where time = {time}').fetchone()  
+                    if result:  
+                        conn.execute(f"UPDATE {self._table} SET flag = {flag}, damage = {damage} where time = {time}")  
+            except (sqlite3.DatabaseError) as e:  
                 raise
 
-    async def member_check(self):
-        config = await load_config(os.path.join(clan_path, f'{self.group_id}', "clanbattle.json"))
-        member_dict = config["member"]
-        with self._connect() as conn:
-            try:
-                result = conn.execute(f'SELECT MAX(time) FROM {self._table}').fetchone()
-                latest_time = result[0] if result[0] else 0
-                date = pcr_date(latest_time)
-                start_day = date - timedelta(days=5)
-                if result := conn.execute(f"SELECT pcrid, name FROM {self._table} WHERE time BETWEEN ? AND ?", (start_day.timestamp(), latest_time,)).fetchall():
-                    for r in result:
-                        if r[1] not in member_dict:
-                            for name in member_dict:
-                                if member_dict[name] == r[0]:
-                                    conn.execute(f"UPDATE {self._table} SET name = {name} where pcrid = {member_dict[name]}")
-                                    break
-            except:
+    async def member_check(self):  
+        config = await load_config(os.path.join(clan_path, f'{self.group_id}', "clanbattle.json"))  
+        member_dict = config.get("member", {})  
+        if not isinstance(member_dict, dict):  
+            return  
+        with self._connect() as conn:  
+            try:  
+                result = conn.execute(f'SELECT MAX(time) FROM {self._table}').fetchone()  
+                latest_time = result[0] if result[0] else 0  
+                date = pcr_date(latest_time)  
+                start_day = date - timedelta(days=5)  
+                if result := conn.execute(f"SELECT pcrid, name FROM {self._table} WHERE time BETWEEN ? AND ?", (start_day.timestamp(), latest_time,)).fetchall():  
+                    for r in result:  
+                        if r[1] not in member_dict:  
+                            for name in member_dict:  
+                                if member_dict[name] == r[0]:  
+                                    conn.execute(f"UPDATE {self._table} SET name = '{name}' where pcrid = {member_dict[name]}")  
+                                    break  
+            except:  
                 raise
 
 
