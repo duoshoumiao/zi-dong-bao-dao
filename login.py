@@ -139,7 +139,7 @@ async def query(acccount_info, is_force=False, group_id=None):
 
 
   
-@on_command("渠绑定账号")  
+@on_command("渠绑定账号2")  
 async def bind_support_qu(session):  
     content = session.ctx['message'].extract_plain_text().split()  
     qq_id = session.ctx['user_id']  
@@ -174,7 +174,7 @@ async def bind_support_qu(session):
         logger.info(traceback.format_exc())  
         await bot.send_private_msg(user_id=qq_id, message="渠道服绑定失败：" + str(e))
         
-@on_command("#绑定账号")
+@on_command("#234绑定账号")
 async def bind_support(session):
     acccount = {'platform': 2, 'channel': 1, }
     content = session.ctx['message'].extract_plain_text().split()
