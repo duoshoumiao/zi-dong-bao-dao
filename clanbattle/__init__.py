@@ -1494,7 +1494,7 @@ async def check_silent_offline():
         except Exception as e:  
             pass   
             
-@sv.scheduled_job('cron', minute='0,30')  
+@sv.scheduled_job('cron', minute='1,31')  
 async def auto_scan_and_upload():  
     """每小时的整点和30分自动扫描公会排名并上传到 GitHub"""  
     global auto_scan_config  
