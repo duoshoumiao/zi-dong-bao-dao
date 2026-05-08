@@ -1525,30 +1525,38 @@ async def auto_scan_and_upload():
         all_clans = {}  
         failed_pages = []  
   
-        for page in range(1000):  
-            try:  
-                page_info = await client.callapi('/clan_battle/period_ranking', {  
-                    'clan_id': clan_id,  
-                    'clan_battle_id': clan_battle_id,  
-                    'period': 1,  
-                    'month': 0,  
-                    'page': page,  
-                    'is_my_clan': 0,  
-                    'is_first': 1  
-                })  
-                if page_info['period_ranking'] == []:  
-                    break  
-                for rank in page_info['period_ranking']:  
-                    rank_num = rank.get('rank', 0)  
-                    all_clans[str(rank_num)] = {  
-                        'rank': rank_num,  
-                        'clan_name': rank.get('clan_name', '该公会可能已解散'),  
-                        'leader_name': rank.get('leader_name', '未知'),  
-                        'damage': rank.get('damage', 0),  
-                        'member_num': rank.get('member_num', 0),  
-                        'grade_rank': rank.get('grade_rank', 0),  
-                    }  
-                await asyncio.sleep(0.3)  
+        for page in range(1000):
+            # 限制扫描公会数量不超过3000个
+            if len(all_clans) >= 3000:
+                logger.info(f'[自动扫描] 已达到3000个公会限制，停止扫描')
+                break
+                
+            try:
+                page_info = await client.callapi('/clan_battle/period_ranking', {
+                    'clan_id': clan_id,
+                    'clan_battle_id': clan_battle_id,
+                    'period': 1,
+                    'month': 0,
+                    'page': page,
+                    'is_my_clan': 0,
+                    'is_first': 1
+                })
+                if page_info['period_ranking'] == []:
+                    break
+                for rank in page_info['period_ranking']:
+                    # 再次检查是否达到3000个限制
+                    if len(all_clans) >= 3000:
+                        break
+                    rank_num = rank.get('rank', 0)
+                    all_clans[str(rank_num)] = {
+                        'rank': rank_num,
+                        'clan_name': rank.get('clan_name', '该公会可能已解散'),
+                        'leader_name': rank.get('leader_name', '未知'),
+                        'damage': rank.get('damage', 0),
+                        'member_num': rank.get('member_num', 0),
+                        'grade_rank': rank.get('grade_rank', 0),
+                    }
+                await asyncio.sleep(0.3)
             except Exception as e:  
                 logger.error(f'[自动扫描] 第{page}页失败: {e}')  
                 await asyncio.sleep(2)  
