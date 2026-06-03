@@ -182,7 +182,7 @@ def save_progress_records(gid, records):
         logger.error(f"保存进度记录失败: {e}")
 
 sv = Service(
-    name="自动报刀2",
+    name="自动报刀",
     visible=True,
     enable_on_default=False,
     help_=help_text,
@@ -1198,7 +1198,7 @@ async def get_report(bot, ev):
 @sv.on_fullmatch('绑定团队战工具帮助')  
 async def bindtool_help(bot, ev):  
     help_msg = """绑定团队战工具步骤：  
-1. 在浏览器中打开 https://bigfun.bilibili.com/tools#/pages/gzlj  
+1. 在浏览器中打开 https://game.bilibili.com/tool/pcr/
 2. 登录你的B站账号  
 3. 按F12打开开发者工具，切换到Network(网络)标签  
 4. 刷新页面，找到任意一个请求，复制请求头中的Cookie值  
