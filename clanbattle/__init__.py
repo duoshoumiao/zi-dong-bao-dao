@@ -106,13 +106,28 @@ def _upload_scan_to_github():
         }  
         if sha:  
             payload['sha'] = sha  
-        resp = requests.put(GITHUB_API_BASE, json=payload, headers=headers)  
-        if resp.status_code in (200, 201):  
-            logger.info('[自动扫描] 公会数据已成功上传到 GitHub')  
-            return True  
-        else:  
-            logger.error(f'[自动扫描] 上传失败: HTTP {resp.status_code} {resp.json().get("message", "")}')  
-            return False  
+        max_retries = 5  # 最大重试次数  
+        for attempt in range(1, max_retries + 1):  
+            try:  
+                # 每次重试前重新获取最新 SHA，避免 SHA 冲突  
+                sha = _get_github_file_sha()  
+                if sha:  
+                    payload['sha'] = sha  
+                resp = requests.put(GITHUB_API_BASE, json=payload, headers=headers)  
+                if resp.status_code in (200, 201):  
+                    logger.info(f'[自动扫描] 公会数据已成功上传到 GitHub（第 {attempt} 次尝试）')  
+                    return True  
+                # 鉴权类错误不重试，直接放弃  
+                if resp.status_code in (401, 403):  
+                    logger.error(f'[自动扫描] 鉴权失败 HTTP {resp.status_code}，放弃上传: {resp.json().get("message", "")}')  
+                    return False  
+                logger.error(f'[自动扫描] 第 {attempt} 次上传失败: HTTP {resp.status_code} {resp.json().get("message", "")}')  
+            except Exception as e:  
+                logger.exception(f'[自动扫描] 第 {attempt} 次上传异常: {e}')  
+            if attempt < max_retries:  
+                time.sleep(min(2 ** attempt, 30))  # 指数退避，最多等 30 秒  
+        logger.error(f'[自动扫描] 已重试 {max_retries} 次仍上传失败，放弃')  
+        return False  
     except Exception as e:  
         logger.exception(f'[自动扫描] 上传异常: {e}')  
         return False
@@ -189,17 +204,22 @@ sv = Service(
 )
 
     
-@sv.on_prefix('bdval')  
-async def on_bd_validate(bot, ev):  
-    validate_value = ev.message.extract_plain_text().strip()  
-    if not validate_value:  
-        return  
-    login_module.manual_captch_result = validate_value  
-    try:  
-        login_module.captcha_lck.release()  
-    except RuntimeError:  
-        pass  
-    await bot.send(ev, '验证码已提交')     
+@sv.on_prefix('bdval')    
+async def on_bd_validate(bot, ev):    
+    validate_value = ev.message.extract_plain_text().strip()    
+    if not validate_value:    
+        logger.warning("bdval 收到空验证码，已忽略")  
+        return    
+    logger.info(f"bdval 收到手动过码结果: {validate_value}")  
+    login_module.manual_captch_result = validate_value    
+    logger.info(f"已写回 login_module.manual_captch_result = {login_module.manual_captch_result}")  
+    try:    
+        login_module.captcha_lck.release()    
+        logger.info("已释放 captcha_lck 锁")  
+    except RuntimeError:    
+        logger.warning("captcha_lck 释放失败（锁未被持有）")  
+        pass    
+    await bot.send(ev, '验证码已提交')   
     
 @sv.on_fullmatch('查击破')  
 async def query_kill_all(bot, ev: CQEvent):  
