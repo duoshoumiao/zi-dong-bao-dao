@@ -70,7 +70,11 @@ async def login(bili_account, bili_pwd, make_captch):
     logger.info("触发验证码，尝试过码")
     # start_captcha_input
     cap = await sendpost(bililogin + "api/client/start_captcha", setsign(json.loads(modolcaptch)))
-    challenge, gt_user_id, validate_key = await make_captch(cap['gt'], cap['challenge'], cap['gt_user_id'])
+    captch_result = await make_captch(cap['gt'], cap['challenge'], cap['gt_user_id'])  
+    logger.info(f"过码验证器返回结果: {captch_result}")  
+    if not captch_result or len(captch_result) != 3:  
+        raise Exception(f"过码失败：验证器未返回有效结果(返回值={captch_result})，请重试或改用手动过码")  
+    challenge, gt_user_id, validate_key = captch_result
     return await _login(bili_account, bili_pwd, challenge, gt_user_id, validate_key)
 
 
@@ -84,12 +88,17 @@ class bsdkclient:
         else:  
             self.platform = "4"  
   
-    async def b_login(self):  
-        if self.qudao == 0:  
-            for i in range(3):  
-                resp = await login(self.acccountinfo['account'], self.acccountinfo['password'], self.captchaVerifier)  
-                if resp['code'] == 0:  
-                    logger.info("geetest or captcha succeed")  
-                    return resp['uid'], resp['access_key']  
-        elif self.qudao == 1:  
+    async def b_login(self):    
+        if self.qudao == 0:    
+            last_resp = None  
+            for i in range(3):    
+                resp = await login(self.acccountinfo['account'], self.acccountinfo['password'], self.captchaVerifier)    
+                last_resp = resp  
+                if resp['code'] == 0:    
+                    logger.info("geetest or captcha succeed")    
+                    return resp['uid'], resp['access_key']    
+                logger.warning(f"第 {i + 1} 次登录失败：{resp}")  
+            # 3 次都失败，明确抛异常，避免返回 None 导致上层解包崩溃  
+            raise Exception(f"登录失败：多次尝试后仍未成功，请检查账号密码或过码服务。最后一次返回：{last_resp}")  
+        elif self.qudao == 1:    
             return self.acccountinfo['uid'], self.acccountinfo['access_key']

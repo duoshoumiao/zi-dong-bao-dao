@@ -59,10 +59,14 @@ async def captchaVerifier(*args):
                 if res["info"] in ["fail", "url invalid"]:
                     raise Exception(f"自动过码失败")
 
-                if res["info"] == "in running":
-                    logger.info(f"正在过码。等待5s")
-                    await asyncio.sleep(5)
-
+                if res["info"] == "in running":  
+                    logger.info(f"正在过码。等待5s")  
+                    await asyncio.sleep(5)  
+                    continue  
+  
+                logger.warning(f"过码返回未知状态，完整返回内容: {res}")  
+                await asyncio.sleep(5)  
+  
             raise Exception(f"自动过码多次失败")
 
         except Exception as e:
@@ -85,11 +89,12 @@ async def manual_captch(challenge: str, gt: str, user_id: str, group_id: int, bi
       
     try:  
         await asyncio.wait_for(captcha_lck.acquire(), gt_wait)  
-        captcha_lck.release()  
-        if manual_captch_result:  
-            return (challenge, user_id, manual_captch_result)  
-        else:  
-            raise RuntimeError("手动过码结果为空")  
+        captcha_lck.release()    
+        logger.info(f"手动过码读取到的 manual_captch_result = {manual_captch_result}")  
+        if manual_captch_result:    
+            return (challenge, user_id, manual_captch_result)    
+        else:    
+            raise RuntimeError("手动过码结果为空")
     except asyncio.TimeoutError:  
         await bot.send_group_msg(group_id=group_id, message="手动过码超时，验证失败")  
         raise RuntimeError("手动过码获取结果超时")  
@@ -139,7 +144,7 @@ async def query(acccount_info, is_force=False, group_id=None):
 
 
   
-@on_command("渠绑定账号2")  
+@on_command("渠绑定账号")  
 async def bind_support_qu(session):  
     content = session.ctx['message'].extract_plain_text().split()  
     qq_id = session.ctx['user_id']  
