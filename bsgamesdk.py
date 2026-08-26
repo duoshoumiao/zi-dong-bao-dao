@@ -59,12 +59,12 @@ async def _login(account, password, challenge="", gt_user="", validate=""):
 
 async def login(bili_account, bili_pwd, make_captch):
     # logger.info(f'logging in with acc={bili_account}, pwd={bili_pwd}')
-    login_sta = await _login(bili_account, bili_pwd)
-    if login_sta.get("message", "") == "用户名或密码错误":
-        raise Exception("用户名或密码错误")
-
-    if "access_key" in login_sta:
-        logger.info("无需验证码登录成功")
+    login_sta = await _login(bili_account, bili_pwd)  
+    if login_sta.get("message", "") in ("用户名或密码错误", "PWD_INVALID") or login_sta.get("code") == 500002:  
+        raise Exception("账号密码错误(PWD_INVALID)，请检查账号配置中的密码")  
+  
+    if "access_key" in login_sta:  
+        logger.info("无需验证码登录成功")  
         return login_sta
 
     logger.info("触发验证码，尝试过码")
