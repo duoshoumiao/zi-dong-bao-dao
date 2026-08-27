@@ -1505,34 +1505,6 @@ async def rank_and_status():
         if not clan_info.loop_check:
             msg += "，但出刀监控未开启，排名可能不准确"
         await bot.send_group_msg(group_id = group_id, message = msg)
-        
-   
-@sv.scheduled_job('cron', minute='*/5')  # 每5分钟检查一次  
-async def check_silent_offline():  
-    bot = get_bot()  
-    current_time = time.time()  
-    offline_groups = []  
-      
-    for group_id in run_group:  
-        if group_id in clanbattle_info:  
-            clan_info = clanbattle_info[group_id]  
-            # 如果心跳时间超过5分钟未更新，认为静默掉线  
-            if clan_info.loop_check and (current_time - clan_info.loop_check > 300):  
-                offline_groups.append(group_id)  
-      
-    # 向掉线的群组发送提醒  
-    for group_id in offline_groups:  
-        try:  
-            await bot.send_group_msg(  
-                self_id=run_group[group_id],   
-                group_id=group_id,   
-                message="检测到出刀监控可能已掉线，请检查监控状态"  
-            )  
-            # 从运行群组中移除，避免重复提醒  
-            del run_group[group_id]  
-            await write_config(run_path, run_group)  
-        except Exception as e:  
-            pass   
             
 @sv.scheduled_job('cron', minute='1,31')  
 async def auto_scan_and_upload():  
