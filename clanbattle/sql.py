@@ -33,45 +33,55 @@ class SqliteDao(object):
         return sqlite3.connect(self._dbpath, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
 
 
-class SLDao(SqliteDao):
-    def __init__(self, groupid):
-        super().__init__(
-            table='sl',
-            columns='uid, last_sl,',
-            fields='''
-            uid INT NOT NULL,
-            last_sl INT
-            ''',
-            groupid=groupid
-        )
+class SLDao(SqliteDao):  
+    def __init__(self, groupid):  
+        super().__init__(  
+            table='sl',  
+            columns='uid, last_sl, report_time,',  
+            fields='''  
+            uid INT NOT NULL,  
+            last_sl INT,  
+            report_time INT  
+            ''',  
+            groupid=groupid  
+        )  
+        # 兼容旧数据库：若无 report_time 列则新增  
+        with self._connect() as conn:  
+            try:  
+                conn.execute("ALTER TABLE sl ADD COLUMN report_time INT")  
+            except sqlite3.OperationalError:  
+                pass
 
     # 0 -> 记录成功
     # 1 -> 当天已有SL记录
     # 2 -> 其它错误
-    def add_sl(self, uid):
-        time = pcr_date(datetime.now().timestamp()).timestamp()
-        with self._connect() as conn:
-            try:
-                ret = conn.execute(
-                    "SELECT uid, last_sl FROM sl WHERE uid = ?", (uid,)).fetchone()
-
-                # 该成员没有使用过SL
-                if not ret:
-                    conn.execute(
-                        'INSERT INTO sl (uid, last_sl) VALUES (?, ?)', (uid, time,))
-                    return 0
-
-                last_sl = ret[1]
-
-                # 今天已经有SL记录
-                if last_sl == time:
-                    return 1
-
-                # 今天没有SL
-                else:
-                    conn.execute(
-                        'UPDATE sl SET last_sl = ? WHERE uid = ?', (time, uid,))
-                    return 0
+    def add_sl(self, uid):  
+        time = pcr_date(datetime.now().timestamp()).timestamp()  
+        now = datetime.now().timestamp()   # 真实上报时刻  
+        with self._connect() as conn:  
+            try:  
+                ret = conn.execute(  
+                    "SELECT uid, last_sl FROM sl WHERE uid = ?", (uid,)).fetchone()  
+  
+                if not ret:  
+                    conn.execute(  
+                        'INSERT INTO sl (uid, last_sl, report_time) VALUES (?, ?, ?)',  
+                        (uid, time, now,))  
+                    return 0  
+  
+                last_sl = ret[1]  
+  
+                if last_sl == time:  
+                    return 1  
+  
+                else:  
+                    conn.execute(  
+                        'UPDATE sl SET last_sl = ?, report_time = ? WHERE uid = ?',  
+                        (time, now, uid,))  
+                    return 0  
+  
+            except (sqlite3.DatabaseError) as e:  
+                raise
 
             except (sqlite3.DatabaseError) as e:
                 raise
@@ -103,6 +113,14 @@ class SLDao(SqliteDao):
             except (sqlite3.DatabaseError) as e:
                 raise
 
+    def get_recent_sl(self, limit=5):  
+        time = pcr_date(datetime.now().timestamp()).timestamp()  
+        with self._connect() as conn:  
+            ret = conn.execute(  
+                "SELECT uid, report_time FROM sl WHERE last_sl = ? "  
+                "ORDER BY report_time DESC LIMIT ?", (time, limit,)).fetchall()  
+            return ret   # [(uid, report_time), ...]
+            
     def refresh(self):
         with self._connect() as conn:
             time = pcr_date(datetime.now().timestamp()).timestamp()

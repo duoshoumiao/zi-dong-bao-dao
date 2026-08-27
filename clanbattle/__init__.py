@@ -156,6 +156,7 @@ help_text = '''
 【下树】寄，掉刀了
 【全员下树】寄，掉刀了
 【挂树 + 数字】失误了, 寄
+【查sl/sl列表】查看今天最近上报SL的前5名及上报时间
 【sl】记录sl
 【sl?】栞栞今天有没有用过sl
 【申请出刀 + 数字 + （留言） 】 申请打boss，boss死亡自动清空
@@ -1063,7 +1064,26 @@ async def issl(bot, ev):
     else:
         await bot.send(ev, '数据库错误 请查看log')
 
-
+@sv.on_fullmatch(('查sl', '查SL', 'sl列表', 'SL列表'))  
+async def list_sl(bot, ev):  
+    group_id = ev.group_id  
+    sl_dao = SLDao(group_id)  
+    records = sl_dao.get_recent_sl(5)  
+    if not records:  
+        await bot.send(ev, '今天还没有人上报过 SL', at_sender=True)  
+        return  
+    lines = ['最近 SL 上报（前5名）：']  
+    for i, (uid, report_time) in enumerate(records, 1):  
+        try:  
+            info = await bot.get_group_member_info(group_id=group_id, user_id=uid)  
+            name = info.get('card') or info.get('nickname') or str(uid)  
+        except Exception:  
+            name = str(uid)  
+        t = datetime.datetime.fromtimestamp(  
+            report_time, tz=datetime.timezone(datetime.timedelta(hours=8))).strftime('%H:%M:%S')  
+        lines.append(f'{i}. {name} - {t}')  
+    await bot.send(ev, '\n'.join(lines))
+    
 @sv.on_rex(r"^(上|挂)树\s?(\d)\s?(.+)?$")
 async def climbtree(bot, ev):
     group_id = ev.group_id
