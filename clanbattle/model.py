@@ -31,9 +31,11 @@ class ClanBattle:
             self.loop_num += 1
             self.client = client  # api client
             self.qq_id = qq_id
-            home_index = await self.client.callapi('/home/index', {'message_id': 1, 'tips_id_list': [], 'is_first': 1, 'gold_history': 0})
-            self.clan_id = home_index['user_clan']['clan_id']
-            clan_battle_top = await self.get_clanbattle_top()
+            home_index = await self.client.callapi('/home/index', {'message_id': 1, 'tips_id_list': [], 'is_first': 1, 'gold_history': 0})  
+            if not home_index.get('user_clan'):    
+                raise Exception("检测到该账号今天还没有登录过游戏（或未加入公会），请先进入游戏后再重试")  
+            self.clan_id = home_index['user_clan']['clan_id']  
+            clan_battle_top = await self.get_clanbattle_top()  
             self.clan_battle_id = clan_battle_top["clan_battle_id"]
             self.lap_num = clan_battle_top["lap_num"]
             self.period = stage_dict[lap2stage(self.lap_num)]

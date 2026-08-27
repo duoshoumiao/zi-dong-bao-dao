@@ -70,9 +70,11 @@ async def get_support_list(info, acccountinfo, qq_id):
     client = await query(acccountinfo)
     load_index = await client.callapi('/load/index', {'carrier': 'OPPO'})
     home_index = await client.callapi('/home/index', {'message_id': 1, 'tips_id_list': [], 'is_first': 1, 'gold_history': 0})
-    if info == 'support_query':
-        clan_id = home_index['user_clan']['clan_id']
-        support_list = await client.callapi('/clan_battle/support_unit_list_2', {"clan_id": clan_id})
+    if info == 'support_query':  
+        if not home_index.get('user_clan'):  
+            return {"error": "no_login"}  
+        clan_id = home_index['user_clan']['clan_id']  
+        support_list = await client.callapi('/clan_battle/support_unit_list_2', {"clan_id": clan_id})  
         return support_list
     if info == 'self_query':
         return load_index
@@ -151,9 +153,12 @@ async def create_support_cache(bot, ev: CQEvent):
     qq_id = ev.user_id
     acccountinfo = await load_config(os.path.join(DATA_PATH, 'account', f'{qq_id}.json'))
     if acccountinfo != []:
-        support_list = await get_support_list('support_query',acccountinfo,qq_id)
-        if "server_error" in support_list:
-            await bot.send(ev, "可能现在不是会战的时候或者网络异常")
+        support_list = await get_support_list('support_query',acccountinfo,qq_id)  
+        if isinstance(support_list, dict) and support_list.get("error") == "no_login":  
+            await bot.send(ev, "检测到你今天还没有登录过游戏，请先进入游戏后再刷新助战缓存")  
+            return  
+        if "server_error" in support_list:  
+            await bot.send(ev, "可能现在不是会战的时候或者网络异常")  
             return
         group_id = ev.group_id
         os.makedirs(os.path.join(info_path, 'group', f'{group_id}'), exist_ok=True)
