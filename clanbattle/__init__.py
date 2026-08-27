@@ -998,8 +998,11 @@ async def list_sl(bot, ev):
             name = info.get('card') or info.get('nickname') or str(uid)  
         except Exception:  
             name = str(uid)  
-        t = datetime.datetime.fromtimestamp(  
-            report_time, tz=datetime.timezone(datetime.timedelta(hours=8))).strftime('%H:%M:%S')  
+        if report_time is None:  
+            t = '未知'  
+        else:  
+            t = datetime.datetime.fromtimestamp(  
+                report_time, tz=datetime.timezone(datetime.timedelta(hours=8))).strftime('%H:%M:%S') 
         lines.append(f'{i}. {name} - {t}')  
     await bot.send(ev, '\n'.join(lines))
     

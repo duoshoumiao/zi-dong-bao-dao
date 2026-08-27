@@ -117,8 +117,8 @@ class SLDao(SqliteDao):
         time = pcr_date(datetime.now().timestamp()).timestamp()  
         with self._connect() as conn:  
             ret = conn.execute(  
-                "SELECT uid, report_time FROM sl WHERE last_sl = ? "  
-                "ORDER BY report_time DESC LIMIT ?", (time, limit,)).fetchall()  
+                "SELECT uid, report_time FROM sl WHERE last_sl = ? AND report_time IS NOT NULL "  
+                "ORDER BY report_time DESC LIMIT ?", (time, limit,)).fetchall()
             return ret   # [(uid, report_time), ...]
             
     def refresh(self):
