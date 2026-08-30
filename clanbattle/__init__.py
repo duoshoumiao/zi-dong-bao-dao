@@ -1428,7 +1428,7 @@ async def rank_and_status():
             msg += "，但出刀监控未开启，排名可能不准确"
         await bot.send_group_msg(group_id = group_id, message = msg)
 
-@sv.scheduled_job('cron', minute='*/3')  # 每3分钟检查一次  
+@sv.scheduled_job('cron', minute='*/1')  # 每1分钟检查一次  
 async def auto_restart_monitor():  
     bot = get_bot()  
     for gid_str, cfg in list(auto_monitor_config.items()):  
@@ -1611,7 +1611,7 @@ async def query_line(bot, ev):
           
         # 处理默认档线查询  
         elif goal == '':  
-            goal_list = [1, 10, 40, 120, 200, 400, 800, 1800, 3000, 6000]  
+            goal_list = [1, 3, 10, 20, 50, 200, 600, 1200, 2800, 5000]  
             await bot.send(ev, '获取数据时间较长，请稍候')  
           
         # 处理公会名搜索  
