@@ -1557,30 +1557,16 @@ async def auto_scan_and_upload():
         # 上传到 GitHub  
         upload_ok = _upload_scan_to_github()  
   
-        # 向绑定群发送通知  
-        try:  
-            result_msg = f'[自动扫描] 完成，共 {len(all_clans)} 个公会'  
-            if failed_pages:  
-                result_msg += f'，失败页: {len(failed_pages)}'  
-            result_msg += '，已上传GitHub' if upload_ok else '，GitHub上传失败'  
-            await bot.send_group_msg(  
-                self_id=self_id,  
-                group_id=group_id,  
-                message=result_msg  
-            )  
-        except Exception:  
-            pass  
+        # 静默上传，不发群，仅记录日志  
+        if upload_ok:  
+            logger.info(f'[自动扫描] 完成，共 {len(all_clans)} 个公会，已上传GitHub'  
+                        + (f'，失败页: {len(failed_pages)}' if failed_pages else ''))  
+        else:  
+            logger.warning(f'[自动扫描] 完成，共 {len(all_clans)} 个公会，GitHub上传失败'  
+                           + (f'，失败页: {len(failed_pages)}' if failed_pages else ''))
   
     except Exception as e:  
-        logger.exception(f'[自动扫描] 出错: {e}')  
-        try:  
-            await bot.send_group_msg(  
-                self_id=self_id,  
-                group_id=group_id,  
-                message=f'[自动扫描] 出错: {e}'  
-            )  
-        except Exception:  
-            pass           
+        logger.exception(f'[自动扫描] 出错: {e}')
 
 @sv.on_prefix('查档线')  
 async def query_line(bot, ev):  
