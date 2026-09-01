@@ -431,7 +431,7 @@ async def send_forward_message_with_player_reports(bot, ev, title, records, grou
             logger.error(f"降级发送也失败: {fallback_error}")
 
 
-async def run_monitor(bot, group_id, qq_id, self_id, account_dir='account'):  
+async def run_monitor(bot, group_id, qq_id, self_id, account_dir='account', from_auto=False):
     # qq_id 即监控人（发命令者本人 / @的人）；account_dir 区分 出刀监控(account) 与 出刀监控2(account2)  
     acccountinfo = await load_config(os.path.join(DATA_PATH, account_dir, f'{qq_id}.json'))  
     if not acccountinfo:  
@@ -454,15 +454,20 @@ async def run_monitor(bot, group_id, qq_id, self_id, account_dir='account'):
         await send_group(bot, self_id, group_id, str(e))  
         return  
   
-    run_group[group_id] = self_id  
-    # 持久化本群监控人账号（沿用已有 auto 开关，默认 False）  
-    auto_monitor_config[str(group_id)] = {  
-        "qq_id": qq_id,  
-        "self_id": self_id,  
-        "account_dir": account_dir,  
-        "auto": auto_monitor_config.get(str(group_id), {}).get("auto", False),  
-    }  
-    await write_config(auto_monitor_path, auto_monitor_config)  
+    run_group[group_id] = self_id    
+    # 持久化本群监控人账号    
+    # from_auto=True 表示自动重启任务触发，沿用原 auto 开关；  
+    # from_auto=False 表示别人手动出刀监控接管，强制关闭自动监控  
+    prev_auto = auto_monitor_config.get(str(group_id), {}).get("auto", False)    
+    auto_monitor_config[str(group_id)] = {    
+        "qq_id": qq_id,    
+        "self_id": self_id,    
+        "account_dir": account_dir,    
+        "auto": prev_auto if from_auto else False,    
+    }    
+    await write_config(auto_monitor_path, auto_monitor_config)    
+    if not from_auto and prev_auto:    
+        await send_group(bot, self_id, group_id, "检测到手动出刀监控接管，已自动关闭本群自动监控")
   
     loop_num = clan_info.loop_num  
     clan_info.loop_check = time.time()  
@@ -1439,15 +1444,16 @@ async def auto_restart_monitor():
         if group_id in run_group or (clan_info and clan_info.loop_check):  
             continue  
         try:  
-            asyncio.create_task(  
-                run_monitor(  
-                    bot,  
-                    group_id,  
-                    cfg["qq_id"],  
-                    cfg["self_id"],  
-                    cfg.get("account_dir", "account"),  
-                )  
-            )  
+            asyncio.create_task(    
+                run_monitor(    
+                    bot,    
+                    group_id,    
+                    cfg["qq_id"],    
+                    cfg["self_id"],    
+                    cfg.get("account_dir", "account"),    
+                    from_auto=True,    
+                )    
+            )
         except Exception:  
             logger.error(traceback.format_exc())
             
