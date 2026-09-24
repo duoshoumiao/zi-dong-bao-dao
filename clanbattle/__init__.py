@@ -801,7 +801,7 @@ async def enable_auto_monitor(bot, ev):
     await bot.send(ev, "已开启自动监控，监控关闭时将自动拉起")  
     clan_info = clanbattle_info.get(group_id)  
     if (not clan_info or not clan_info.loop_check) and group_id not in run_group:  
-        asyncio.create_task(run_monitor(bot, group_id, qq_id, ev.self_id))  
+        asyncio.create_task(run_monitor(bot, group_id, qq_id, ev.self_id, from_auto=True))  
   
   
 @sv.on_fullmatch('关闭自动监控')  
