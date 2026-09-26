@@ -20,7 +20,8 @@ from .sql import SubscribeDao, RecordDao, SLDao, TreeDao, ApplyDao, MemberDict
 import time
 import asyncio
 import logging
-from hoshino.typing import CQEvent, MessageSegment
+from hoshino.typing import CQEvent, MessageSegment  
+from aiocqhttp.exceptions import ApiNotAvailable   # ← 新增这一行
 # 初始化logger
 logger = logging.getLogger(__name__)
   
@@ -1436,7 +1437,16 @@ async def rank_and_status():
 @sv.scheduled_job('cron', minute='*/1')  # 每1分钟检查一次  
 async def auto_restart_monitor():  
     bot = get_bot()  
-    for gid_str, cfg in list(auto_monitor_config.items()):  
+    # API 连接就绪检查：连接未就绪时直接跳过本次触发，等下一分钟重试  
+    try:  
+        await bot.get_status()  
+    except ApiNotAvailable:  
+        logger.debug("OneBot API 尚未就绪，跳过本次 auto_restart_monitor 触发")  
+        return  
+    except Exception:  
+        # 其他异常不应阻断本次触发，仅记录日志  
+        logger.debug(traceback.format_exc())  
+    for gid_str, cfg in list(auto_monitor_config.items()):
         if not cfg.get("auto"):  
             continue  
         group_id = int(gid_str)  
