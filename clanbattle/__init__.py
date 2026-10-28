@@ -154,6 +154,8 @@ help_text = '''
 【出刀监控/出刀监控2】机器人登录账号，监视出刀情况并记录
 【查档线/查公会/查排名】指令+关键词或者排名
 【催刀】栞栞谁没出满三刀
+【绑定 + 名称】把自己的会战昵称绑到QQ（催刀时能@到）
+【绑定 + 名称@某人】管理员给某人绑定会战昵称
 【当前战报】本期会战出刀情况
 【我的战报 + 游戏名称】 栞栞个人出刀情况
 【今日战报 + 游戏名称】 栞栞今日个人出刀情况
@@ -439,8 +441,12 @@ async def run_monitor(bot, group_id, qq_id, self_id, account_dir='account', from
         await send_group(bot, self_id, group_id, "你没有绑定账号，请加bot发送 绑定账号1/绑定账号2")  
         return  
   
-    account = acccountinfo[0].get("account") or acccountinfo[0].get("viewer_id")  
-    await send_group(bot, self_id, group_id, f"正在登录账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")  
+    account = acccountinfo[0].get("account") or acccountinfo[0].get("viewer_id") or acccountinfo[0].get("uid")  
+    if not account:  
+        await send_group(bot, self_id, group_id, "账号配置缺少 account/viewer_id 字段，请重新绑定")  
+        return  
+    account = str(account)  
+    await send_group(bot, self_id, group_id, f"正在登录账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")
   
     try:  
         client = await query(acccountinfo, group_id=group_id)  
@@ -640,8 +646,12 @@ async def add_qu_monitor(bot, ev):
         await bot.send(ev, "你没有绑定渠道服账号，请私聊bot发送 #渠道绑定账号 viewer_id UDID")  
         return  
   
-    account = acccountinfo[0].get("uid") or acccountinfo[0].get("account")  
-    await bot.send(ev, f"正在登录渠道服账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}")  
+    account = acccountinfo[0].get("uid") or acccountinfo[0].get("account") or acccountinfo[0].get("viewer_id")  
+    if not account:  
+        await bot.send(ev, "账号配置缺少 uid/account 字段，请重新绑定")  
+        return  
+    account = str(account)  
+    await bot.send(ev, f"正在登录渠道服账号，请耐心等待，当前监控账号为{account[:3]}******{account[-3:]}") 
   
     try:  
         client = await query(acccountinfo, group_id=group_id)  
@@ -1323,6 +1333,71 @@ async def nei_gui(bot, ev):
         msg += "\n"  
   
     await bot.send(ev, msg.strip())
+
+@sv.on_rex(r'^\s*绑定\s*(?P<rest>.+)$')
+async def bind_cuidao_name(bot, ev):
+    """绑定会战昵称到 QQ，供【催刀】@ 用。
+
+    两种用法（与需求一致）：
+        绑定 名称          —— 给自己绑定这个会战昵称
+        绑定 名称@某人     —— 给被 @ 的人绑定这个会战昵称
+    也支持一次绑多个名字：绑定 名字1 名字2（都绑给同一个人）。
+
+    为什么要这条指令：催刀 @ 依赖 clanbattle.json 的 cuidao_qq_map（昵称 -> QQ），
+    那张表原本只能从 Web 管理页面改。群里催刀时看到「未配置QQ」，还得让人去开网页，
+    所以补一个群内直接绑定的入口。
+    """
+    group_id = ev.group_id
+    raw = str(ev.message)
+
+    # @ 目标：取 CQ 码里的 qq；没有 @ 就是自己
+    ats = re.findall(r'\[CQ:at,qq=(\d+)\]', raw)
+    if len(ats) > 1:
+        await bot.send(ev, '一次只能 @ 一个人哦')
+        return
+    target_qq = int(ats[0]) if ats else int(ev.user_id)
+
+    # 名称：去掉 CQ 码后的纯文本，再剥掉指令词
+    plain = re.sub(r'\[CQ:[^\]]*\]', ' ', raw)
+    plain = re.sub(r'\s+', ' ', plain).strip()
+    m = re.match(r'^绑定\s*(.*)$', plain)
+    if not m:
+        return
+    rest = m.group(1).strip()
+    if not rest:
+        await bot.send(ev, '用法：\n绑定 会战昵称\n绑定 会战昵称@某人')
+        return
+
+    names = [n for n in re.split(r'[\s,，、]+', rest) if n]
+    if not names:
+        await bot.send(ev, '用法：\n绑定 会战昵称\n绑定 会战昵称@某人')
+        return
+
+    # 权限：给自己绑随时可以；给别人绑需要管理员（否则谁都能乱改别人的 @）
+    if target_qq != int(ev.user_id) and not priv.check_priv(ev, priv.ADMIN):
+        await bot.send(ev, '给别人绑定需要管理员权限')
+        return
+
+    # 会战配置存在性检查
+    config_file = os.path.join(clan_path, f'{group_id}', 'clanbattle.json')
+    if not os.path.exists(config_file):
+        await bot.send(ev, '本群还没配置会战数据，请先开启出刀监控')
+        return
+
+    ok, skipped, missing = await bind_cuidao_qq(group_id, names, target_qq)
+
+    lines = []
+    if ok:
+        who = '你' if target_qq == int(ev.user_id) else f'[CQ:at,qq={target_qq}]'
+        lines.append(f'绑定成功：{who} → ' + '、'.join(ok))
+    if skipped:
+        lines.append('以下昵称已绑定了其他QQ，未覆盖：' + '、'.join(skipped))
+    if missing:
+        lines.append('以下昵称不在本群会战名单里，请检查是否打错：' + '、'.join(missing))
+    if not lines:
+        lines.append('没有可绑定的昵称，请检查用法')
+    await bot.send(ev, '\n'.join(lines))
+
 
 @sv.on_fullmatch('会战KPI', '会战kpi')
 async def get_kpi(bot, ev):

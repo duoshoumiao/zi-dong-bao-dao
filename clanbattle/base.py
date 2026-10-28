@@ -5,7 +5,7 @@ import re
 from hoshino import get_bot
 from .bigfun import get_boss_info,get_record
 from ..util.text2img import image_draw
-from ..util.tools import load_config, lap2stage, stage_dict, rate_score, DATA_PATH
+from ..util.tools import load_config, write_config, lap2stage, stage_dict, rate_score, DATA_PATH
 from ...convert2img.convert2img import grid2imgb64
 from hoshino.modules.priconne._pcr_data import CHARA_NAME
 try:
@@ -110,6 +110,68 @@ async def get_stat(data,group_id):
 def clean_name(name):
     """去掉特殊字符，用于模糊匹配"""
     return re.sub(r"[^\w\u4e00-\u9fff]", "", name).lower()
+
+
+async def bind_cuidao_qq(group_id, names, qq, overwrite=False):
+    """把「会战昵称」绑定到 QQ，供催刀 @ 用。
+
+    为什么要有这个函数：`cuidao` 的 @ 依赖 `clanbattle.json` 里的 `cuidao_qq_map`
+    （昵称 -> QQ），但那张表原本只能从 Web 管理页面改。群里催刀时发现某人
+    「未配置QQ」还得让人去开网页，很别扭，所以补一个群内直接绑定的入口。
+
+    Args:
+        group_id: 群号
+        names: 要绑定的会战昵称（可多个，逐个绑定到同一个 QQ）
+        qq: 目标 QQ
+        overwrite: False 时跳过已经绑过**其他** QQ 的昵称（避免手滑覆盖）
+
+    Returns:
+        (ok_list, skipped_list, missing_list)
+        - ok_list: 本次成功写入的昵称
+        - skipped_list: 已绑过别的 QQ、且 overwrite=False 而跳过的昵称
+        - missing_list: 不在会战成员名单里的昵称（多半是名字打错了）
+    """
+    config_file = os.path.join(clan_path, f'{group_id}', "clanbattle.json")
+    config = await load_config(config_file)
+    # load_config 失败会返回 []（不是 dict），这里兜一下，避免 AttributeError
+    if not isinstance(config, dict):
+        return [], [], list(names)
+
+    member = config.get("member") or {}
+    # member 的键就是会战昵称；兼容 member 是 list 的老数据
+    if isinstance(member, dict):
+        roster = {str(k).strip() for k in member.keys()}
+    elif isinstance(member, list):
+        roster = {str(k).strip() for k in member}
+    else:
+        roster = set()
+
+    qq_map = config.get("cuidao_qq_map")
+    if not isinstance(qq_map, dict):
+        qq_map = {}
+        config["cuidao_qq_map"] = qq_map
+
+    qq = int(qq)
+    ok, skipped, missing = [], [], []
+    for raw in names:
+        name = str(raw).strip()
+        if not name:
+            continue
+        if roster and name not in roster:
+            # 名单存在但不含该昵称：多半是打错字，交给调用方提示，不写脏数据
+            missing.append(name)
+            continue
+        old = qq_map.get(name)
+        if old is not None and int(old) != qq and not overwrite:
+            skipped.append(name)
+            continue
+        qq_map[name] = qq
+        ok.append(name)
+
+    if ok:
+        await write_config(config_file, config)
+    return ok, skipped, missing
+
 
 async def cuidao(data, group_id):  
     config_file = os.path.join(clan_path, f'{group_id}', "clanbattle.json")  
